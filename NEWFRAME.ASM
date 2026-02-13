@@ -4,6 +4,8 @@ org 100h
 
 ;=======================================
 
+locals              @@
+
 ESVIDMEM            macro
                     mov ax, 0b800h
                     mov es, ax
@@ -18,15 +20,12 @@ PRINTW              macro base, offset, char
                     mov word ptr es:[base + offset], char
                     endm
 
-PRINTB              macro base, offset, char
-                    mov byte ptr es:[base + offset], char
-                    endm
-
-ARGINIT             macro X0, Y0, length, step
+CALL_PRINTLINE      macro X0, Y0, length, step
                     mov dx, X0
                     mov si, Y0
-                    mov cx, length
+                    mov cx, length - 1      ; sub 1 to fit real size of frame. proc "PrintLine" print one extra char
                     mov di, step
+                    call PrintLine
                     endm
 
 MUL2                macro num1, num2
@@ -37,85 +36,90 @@ MUL2                macro num1, num2
 
 ;=======================================
 
-X0                  equ 20
-Y0                  equ 10
-LEN                 equ 20
-WID                 equ 10
-HOR_STEP            equ 1
-VERT_STEP           equ 80  
+X0                  = 8
+Y0                  = 4
+LEN                 = 8
+WID                 = 4
+HOR_STEP            = 1
+VERT_STEP           = 80  
 
 Start:              ESVIDMEM
-
-                    ARGINIT X0, Y0, LEN, HOR_STEP   ; upper hor side
-                    call PrintLine
-
-                    ARGINIT X0, Y0, WID, VERT_STEP  ; left vert side
-                    call PrintLine
-                    
-                    ARGINIT X0, Y0, LEN, HOR_STEP   ; lower hor side
-                    add si, WID                     ; si = Y0 + WID
-                    call PrintLine                    
-                    
-                    ARGINIT X0, Y0, WID, VERT_STEP  ; right vert side
-                    add dx, LEN                     ; dx = X0 + LEN
-                    call PrintLine 
-
-                    mov dx, X0
-                    mov ax, LEN
-                    shr ax, 1
-                    xor cx, cx
-                    mov cl, [bx]    ; cl = com line lenth
-                    shr cl, 1       ; cl = 0.5 * com line lenth
-                    add dx, ax      
-                    sub dx, cx      ; dx = Xtext
-
-                    mov si, Y0
-                    mov ax, WID
-                    shr ax, 1
-                    add si, ax      ; si = Ytext
-                    call PrintString                   
-
+                    call Print_Frame
+                    call Find_Frame_Center
+                    call PrintString  
                     EXIT
 
+Print_Frame         proc
 
-PrintString:		call CalcAdrXY; ax = string start adr in vid mem
+                    CALL_PRINTLINE X0, Y0, LEN, HOR_STEP   ; upper hor side
 
-					mov si, 80h			; adr of com line lenth
-					mov bx, si
-					mov cl, [bx]		; cl = com line lenth
-
-	Print_one_symb:
-					mov bx, si			; bx = 80h
-					mov di, cx			; di = offset in RAM
-					mov dl, [bx + di]	; si = char from RAM
-
-					mov bx, ax			; bx = base in VM
-					shl di, 1			; di = 2*offset bytes
-					PRINTB bx, di, dl	; print char
-					inc di				
-					PRINTB bx, di, 4ch	; print attribute
-
-					loop Print_one_symb
+                    CALL_PRINTLINE X0, Y0, WID, VERT_STEP  ; left vert side
+                    
+                    mov si, Y0 + WID-1                     ; si = Y0 + WID. sub 1 to fit real size of frame 
+                    CALL_PRINTLINE X0, si, LEN, HOR_STEP   ; lower hor side
+                    
+                    mov dx, X0 + LEN-1                     ; dx = X0 + LEN. sub 1 to fit real size of frame
+                    CALL_PRINTLINE dx, Y0, WID, VERT_STEP  ; right vert side
 
                     rep ret
+                    endp
 
-PrintLine:          call CalcAdrXY  ; ax = base
+Find_Frame_Center   proc
+
+                    mov dx, X0
+                    mov ax, LEN          ; ax = LEN
+                    shr ax, 1            ; ax = 0.5 * LEN
+                    xor cx, cx
+                    mov cl, ds:[80h]     ; cl = com line lenth
+                    shr cl, 1            ; cl = 0.5 * com line lenth
+                    add dx, ax      
+                    sub dx, cx           ; dx = Xtext
+
+                    mov si, Y0
+                    mov ax, WID           ; ax = WID
+                    shr ax, 1             ; ax = 0.5 * WID
+                    add si, ax            ; si = Ytext                 
+
+                    rep ret
+                    endp
+
+PrintString 		proc
+                    call CalcAdrXY      ; ax = string start adr in vid mem
+                    xor cx, cx
+					mov cl, ds:[80h]  	; cl = com line lenth
+                    dec cl              ; do not count extra space
+                    mov si, 82h         ; start adr of com line (without extra space)
+                    mov di, ax          ; start adr to print string in vid mem
+
+	@@Print_one_char:
+					mov ah, 4ch         ; store attribite
+                    lodsb               ; save 1 char in al
+                    stosw               ; print 1 char and it`s attribite
+					loop @@Print_one_char
+
+                    rep ret
+                    endp
+
+PrintLine           proc
+                    call CalcAdrXY  ; ax = base
                     mov bx, ax      ; bx = base
 
                     shl di, 1       ; di = 2*offset bytes
 
-    Print_one_char:
+    @@Print_one_char:
                     mov si, cx
                     MUL2 si, di     ; si = 2*offset bytes
                     PRINTW bx, si, 4c03h
-                    loop Print_one_char
+                    loop @@Print_one_char
 
                     PRINTW bx, 0, 4c03h
 
                     rep ret
+                    endp
 
 
-CalcAdrXY:          push si         ; x in dx, y in si
+CalcAdrXY           proc
+                    push si         ; x in dx, y in si
                     push dx          
 
                     shl dx, 1       ; dx = 2x bytes
@@ -131,6 +135,6 @@ CalcAdrXY:          push si         ; x in dx, y in si
                     pop si
 
                     rep ret
-
+                    endp
 
 end                 Start
