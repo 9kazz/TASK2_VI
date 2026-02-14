@@ -36,10 +36,10 @@ MUL2                macro num1, num2
 
 ;=======================================
 
-X0                  = 8
-Y0                  = 4
-LEN                 = 8
-WID                 = 4
+X0                  = 20
+Y0                  = 8
+LEN                 = 24
+WID                 = 8
 HOR_STEP            = 1
 VERT_STEP           = 80  
 
@@ -48,6 +48,19 @@ Start:              ESVIDMEM
                     call Find_Frame_Center
                     call PrintString  
                     EXIT
+
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    prints rectangular frame using video memory 
+; Entry:    frame coordinates and size as defined constants X0, Y0, LEN, WID
+;           X0  == horizontal screen offset of rectangle`s upper-left vertex
+;           Y0  == vertical screen offset of rectangle`s upper-left vertex
+;           LEN == rectangle`s horizontal size (is measured in characters)
+;           WID == rectangle`s vertical size (is measured in characters)
+; Exit:     --
+; Exp:      difined correct input constants
+; Exp:      es --> start video memory [b800h]
+; Destr:    ax,bx, cx, dx, si, di
+;------------------------------------------------------------------------------------------------------------------
 
 Print_Frame         proc
 
@@ -63,6 +76,20 @@ Print_Frame         proc
 
                     rep ret
                     endp
+
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    calculates offset from the start of video memory according coordinates of frame`s center
+; Entry:    frame coordinates and size as defined constants X0, Y0, LEN, WID
+;           X0  == horizontal screen offset of rectangle`s upper-left vertex
+;           Y0  == vertical screen offset of rectangle`s upper-left vertex
+;           LEN == rectangle`s horizontal size (is measured in characters)
+;           WID == rectangle`s vertical size (is measured in characters)
+; Exit:     dx  == horizontal screen offset of frame`s center
+;           si  == vertical screen offset of frame`s center
+; Exp:      difined correct input constants
+;           es --> start video memory [b800h]
+; Destr:    ax, cx
+;------------------------------------------------------------------------------------------------------------------
 
 Find_Frame_Center   proc
 
@@ -83,6 +110,17 @@ Find_Frame_Center   proc
                     rep ret
                     endp
 
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    prints command line using video memory.
+; Entry:    dx  == horizontal screen offset of frame`s center
+;           si  == vertical screen offset of frame`s center
+; Exit:     ah  == printing char attribite (can be changed into the function)
+;           al  == ASCII of the next character after the string`s last one
+;           cl  == address of command line`s start in ds (82h). Skip extra space (real address is 81h).
+; Exp:      es --> start video memory [b800h]
+; Destr:    ax, cx
+;------------------------------------------------------------------------------------------------------------------
+
 PrintString 		proc
                     call CalcAdrXY      ; ax = string start adr in vid mem
                     xor cx, cx
@@ -99,6 +137,19 @@ PrintString 		proc
 
                     rep ret
                     endp
+
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    prints group of characters with fixed offset into video memory.
+; Entry:    dx  == horizontal screen offset of frame`s center
+;           si  == vertical screen offset of frame`s center
+;           cx  == amount of the characters, which will be printed
+;           di  == offset (is measured in charaters) between nearby characters
+; Exit:     ax  == address of the first character
+;           di  == offset (is measured in bytes) between nearby characters
+; Exp:      es --> start video memory [b800h]
+; Destr:    ax, cx
+; Note:     macro CALL_PRINTLINE initialises parameters and then calls the PrintLine function itself.
+;------------------------------------------------------------------------------------------------------------------
 
 PrintLine           proc
                     call CalcAdrXY  ; ax = base
@@ -117,9 +168,17 @@ PrintLine           proc
                     rep ret
                     endp
 
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    returns offset (is measured in bytes) from the start of video memory according to x-y-coordinates
+; Entry:    dx  == horizontal screen offset of frame`s center
+;           si  == vertical screen offset of frame`s center
+; Exit:     ax  == calculated  offset (is measured in bytes) from the start of video memory
+; Exp:      --
+; Destr:    --
+;------------------------------------------------------------------------------------------------------------------
 
 CalcAdrXY           proc
-                    push si         ; x in dx, y in si
+                    push si
                     push dx          
 
                     shl dx, 1       ; dx = 2x bytes
