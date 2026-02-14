@@ -23,7 +23,8 @@ PRINTW              macro base, offset, char
 CALL_PRINTLINE      macro X0, Y0, length, step
                     mov dx, X0
                     mov si, Y0
-                    mov cx, length - 1      ; sub 1 to fit real size of frame. proc "PrintLine" print one extra char
+                    mov cx, length
+                    dec cx          ; sub 1 to fit real size of frame. proc "PrintLine" print one extra char
                     mov di, step
                     call PrintLine
                     endm
@@ -36,17 +37,30 @@ MUL2                macro num1, num2
 
 ;=======================================
 
-X0                  = 20
-Y0                  = 8
-LEN                 = 24
-WID                 = 8
+FramePar_t          struc
+    x0              dw 0        ; upper-left vertex coordinate x
+    y0              dw 0        ; upper-left vertex coordinate y
+    len             dw 0        ; horizontal size (lenth)
+    wid             dw 0        ; vertical size (width)
+    fill            dw 4c00h    ; chars to filling and its attribite
+    style           dw 0        ; frame style
+FramePar_t          ends
+    
 HOR_STEP            = 1
 VERT_STEP           = 80  
 
-Start:              ESVIDMEM
+;=======================================
+
+Start:              
+                    jmp    @@Skip_Inits
+                    Frame0 FramePar_t <10, 10, 5, 5, 4c00h, 0>
+    @@Skip_Inits:              
+                    ESVIDMEM
+
                     call Print_Frame
                     call Find_Frame_Center
                     call PrintString  
+
                     EXIT
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -64,15 +78,21 @@ Start:              ESVIDMEM
 
 Print_Frame         proc
 
-                    CALL_PRINTLINE X0, Y0, LEN, HOR_STEP   ; upper hor side
+                    CALL_PRINTLINE [Frame0.x0], [Frame0.y0], [Frame0.len], HOR_STEP   ; upper hor side
 
-                    CALL_PRINTLINE X0, Y0, WID, VERT_STEP  ; left vert side
+                    CALL_PRINTLINE [Frame0.x0], [Frame0.y0], [Frame0.wid], VERT_STEP  ; left vert side
                     
-                    mov si, Y0 + WID-1                     ; si = Y0 + WID. sub 1 to fit real size of frame 
-                    CALL_PRINTLINE X0, si, LEN, HOR_STEP   ; lower hor side
+                    mov bx, [Frame0.y0]        
+                    dec bx                                                            ; sub 1 to fit real size of frame
+                    mov si, [Frame0.wid]
+                    lea si, [bx + si]                                                 ; si = Y0 + WID - 1
+                    CALL_PRINTLINE [Frame0.x0], si, [Frame0.len], HOR_STEP            ; lower hor side
                     
-                    mov dx, X0 + LEN-1                     ; dx = X0 + LEN. sub 1 to fit real size of frame
-                    CALL_PRINTLINE dx, Y0, WID, VERT_STEP  ; right vert side
+                    mov bx, [Frame0.x0]   
+                    dec bx                                                            ; sub 1 to fit real size of frame
+                    mov si, [Frame0.len]
+                    lea dx, [bx + si]                                                 ; dx = X0 + LEN - 1
+                    CALL_PRINTLINE dx, [Frame0.y0], [Frame0.wid], VERT_STEP           ; right vert side
 
                     rep ret
                     endp
@@ -93,8 +113,8 @@ Print_Frame         proc
 
 Find_Frame_Center   proc
 
-                    mov dx, X0
-                    mov ax, LEN          ; ax = LEN
+                    mov dx, [Frame0.x0]
+                    mov ax, [Frame0.len] ; ax = LEN
                     shr ax, 1            ; ax = 0.5 * LEN
                     xor cx, cx
                     mov cl, ds:[80h]     ; cl = com line lenth
@@ -102,8 +122,8 @@ Find_Frame_Center   proc
                     add dx, ax      
                     sub dx, cx           ; dx = Xtext
 
-                    mov si, Y0
-                    mov ax, WID           ; ax = WID
+                    mov si, [Frame0.y0]
+                    mov ax, [Frame0.wid]  ; ax = WID
                     shr ax, 1             ; ax = 0.5 * WID
                     add si, ax            ; si = Ytext                 
 
@@ -148,7 +168,9 @@ PrintString 		proc
 ;           di  == offset (is measured in bytes) between nearby characters
 ; Exp:      es --> start video memory [b800h]
 ; Destr:    ax, cx
-; Note:     macro CALL_PRINTLINE initialises parameters and then calls the PrintLine function itself.
+; Note_1:   macro CALL_PRINTLINE initialises parameters and then calls the PrintLine function itself.
+; Note_2:   constants (HOR_STEP = 1, VERT_STEP = 80) were difined. If parameter STEP = HOR_STEP (VERT_STEP), the horizontal 
+;           (vertical) line will be printed.
 ;------------------------------------------------------------------------------------------------------------------
 
 PrintLine           proc
@@ -167,6 +189,21 @@ PrintLine           proc
 
                     rep ret
                     endp
+
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    
+; Entry:              
+; Exit:     
+; Exp:      
+; Destr:    
+;------------------------------------------------------------------------------------------------------------------
+
+;FillFrame           proc
+
+;                    mov cx, 
+;                    rep ret
+;                    endp
+
 
 ;------------------------------------------------------------------------------------------------------------------
 ; Descr:    returns offset (is measured in bytes) from the start of video memory according to x-y-coordinates
