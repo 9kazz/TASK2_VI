@@ -57,7 +57,8 @@ Start:
     @@Skip_Inits:              
                     ESVIDMEM
 
-                    call Print_Frame
+                    call FillFrame
+                    call PrintFrame
                     call Find_Frame_Center
                     call PrintString  
 
@@ -76,7 +77,7 @@ Start:
 ; Destr:    ax,bx, cx, dx, si, di
 ;------------------------------------------------------------------------------------------------------------------
 
-Print_Frame         proc
+PrintFrame         proc
 
                     CALL_PRINTLINE [Frame0.x0], [Frame0.y0], [Frame0.len], HOR_STEP   ; upper hor side
 
@@ -138,16 +139,16 @@ Find_Frame_Center   proc
 ;           al  == ASCII of the next character after the string`s last one
 ;           cl  == address of command line`s start in ds (82h). Skip extra space (real address is 81h).
 ; Exp:      es --> start video memory [b800h]
-; Destr:    ax, cx
+; Destr:    ax, cx, bx | dx, si
 ;------------------------------------------------------------------------------------------------------------------
 
 PrintString 		proc
-                    call CalcAdrXY      ; ax = string start adr in vid mem
+                    call CalcAdrXY      ; bx = string start adr in vid mem
                     xor cx, cx
 					mov cl, ds:[80h]  	; cl = com line lenth
                     dec cl              ; do not count extra space
                     mov si, 82h         ; start adr of com line (without extra space)
-                    mov di, ax          ; start adr to print string in vid mem
+                    mov di, bx          ; start adr to print string in vid mem
 
 	@@Print_one_char:
 					mov ah, 4ch         ; store attribite
@@ -160,33 +161,54 @@ PrintString 		proc
 
 ;------------------------------------------------------------------------------------------------------------------
 ; Descr:    prints group of characters with fixed offset into video memory.
-; Entry:    dx  == horizontal screen offset of frame`s center
-;           si  == vertical screen offset of frame`s center
+; Entry:    dx  == horizontal screen offset of the line`s start
+;           si  == vertical screen offset of the line`s start
 ;           cx  == amount of the characters, which will be printed
 ;           di  == offset (is measured in charaters) between nearby characters
-; Exit:     ax  == address of the first character
+; Exit:     bx  == address of the first character
 ;           di  == offset (is measured in bytes) between nearby characters
 ; Exp:      es --> start video memory [b800h]
-; Destr:    ax, cx
+; Destr:    bx | cx, si
+; Save:     dx, di
 ; Note_1:   macro CALL_PRINTLINE initialises parameters and then calls the PrintLine function itself.
 ; Note_2:   constants (HOR_STEP = 1, VERT_STEP = 80) were difined. If parameter STEP = HOR_STEP (VERT_STEP), the horizontal 
 ;           (vertical) line will be printed.
 ;------------------------------------------------------------------------------------------------------------------
 
 PrintLine           proc
-                    call CalcAdrXY  ; ax = base
-                    mov bx, ax      ; bx = base
 
-                    shl di, 1       ; di = 2*offset bytes
+                    call CalcAdrXY      ; bx = base
+                    
+                    cmp di, HOR_STEP    ; if di == HOR_STEP
+                    je @@hor_line
 
-    @@Print_one_char:
+                    cmp di, VERT_STEP   ; if di == VERT_STEP
+                    je @@vert_line
+
+                    jmp @@end_proc
+
+    @@hor_line:     
                     mov si, cx
-                    MUL2 si, di     ; si = 2*offset bytes
+                    shl si, 1   ; si = 2*cx = 2 * HOR_STEP
+
                     PRINTW bx, si, 4c03h
-                    loop @@Print_one_char
+                    loop @@hor_line
 
+                    jmp @@end_proc
+
+    @@vert_line:
+                    mov si, cx
+
+                    mov di, si          ; di = cx
+                    shl si, 2           ; si = 4*cx
+                    add si, di          ; si = 5*cx
+                    shl si, 5           ; si = 160*cx = 2 * VERT_STEP
+
+                    PRINTW bx, si, 4c03h
+                    loop @@vert_line
+
+    @@end_proc:      
                     PRINTW bx, 0, 4c03h
-
                     rep ret
                     endp
 
@@ -198,20 +220,31 @@ PrintLine           proc
 ; Destr:    
 ;------------------------------------------------------------------------------------------------------------------
 
-;FillFrame           proc
+FillFrame          proc
 
-;                    mov cx, 
-;                    rep ret
-;                    endp
+                   mov bx, [Frame0.y0]      ; bx = y0
+                   mov si, [Frame0.wid]     ; si = wid
+                   lea ax, [bx + si]        ; ax = y0 + wid
+                   dec ax                   ; ax = y0 + wid - 1
+
+    @@Fill_one_line:
+                    CALL_PRINTLINE [Frame0.x0], ax, [Frame0.len], HOR_STEP  ; this func changes cx
+                    dec ax
+                    cmp ax, [Frame0.y0]
+                    jge  @@Fill_one_line
+
+                    rep ret
+                    endp
 
 
 ;------------------------------------------------------------------------------------------------------------------
 ; Descr:    returns offset (is measured in bytes) from the start of video memory according to x-y-coordinates
 ; Entry:    dx  == horizontal screen offset of frame`s center
 ;           si  == vertical screen offset of frame`s center
-; Exit:     ax  == calculated  offset (is measured in bytes) from the start of video memory
+; Exit:     bx  == calculated  offset (is measured in bytes) from the start of video memory
 ; Exp:      --
 ; Destr:    --
+; Save:     dx, si
 ;------------------------------------------------------------------------------------------------------------------
 
 CalcAdrXY           proc
@@ -219,13 +252,13 @@ CalcAdrXY           proc
                     push dx          
 
                     shl dx, 1       ; dx = 2x bytes
-         			mov ax, si	    ; ax = y
+         			mov bx, si	    ; ax = y
                     shl si, 2	    ; si = 4y
-                    add si, ax	    ; si = 5y
+                    add si, bx	    ; si = 5y
                     shl si, 5	    ; si = 160y bytes
                     
-                    mov ax, dx
-                    add ax, si
+                    mov bx, dx
+                    add bx, si
 
                     pop dx
                     pop si
