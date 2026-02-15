@@ -2,7 +2,7 @@
 .code
 org 100h
 
-;=======================================
+;===================================================================================================================
 
 locals              @@
 
@@ -20,7 +20,7 @@ PRINTW              macro base, offset, char
                     mov word ptr es:[base + offset], char
                     endm
 
-CALL_PRINTLINE      macro X0, Y0, length, step, char
+CALL_PRINT_LINE     macro X0, Y0, length, step, char
                     mov dx, X0
                     mov si, Y0
                     mov cx, length
@@ -31,7 +31,19 @@ CALL_PRINTLINE      macro X0, Y0, length, step, char
                     pop cx          ; destroy arg
                     endm
 
-;=======================================
+_PUSH_              macro args1
+                    irp args2, <args1>
+                    push args2
+                    endm
+                    endm
+
+_POP_               macro args1
+                    irp args2, <args1>
+                    pop args2
+                    endm
+                    endm
+
+;===================================================================================================================
 
 FramePar_t          struc
     x0              dw 0        ; upper-left vertex coordinate x
@@ -45,58 +57,88 @@ FramePar_t          ends
 HOR_STEP            = 1
 VERT_STEP           = 80  
 
-;=======================================
+;===================================================================================================================
 
-Start:              
+Start               proc              
                     jmp    @@Skip_Inits
+
                     Frame0 FramePar_t <10, 10, 5, 5, 4c00h, 0>
-    @@Skip_Inits:              
+
+                    Style_arr   dw 4c03h
+                                dw 4c03h or 8000h
+
+    @@Skip_Inits:   call MAIN
+                    endp
+
+                    
+MAIN                proc
+
                     ESVIDMEM
 
+                    xor ch, ch
+                    mov cl, ds:[80h]    ; lenth of the command line
+                    mov si, 81h         ; start of command line
+
+                    call Skip_space
+                    call Atoi
+
+                    _PUSH_ <dx, si, cx, dx>
                     call FillFrame
+
+                    pop si              ; si = idx in Style_arr
+                    shl si, 1           ; si = 2 * si (bytes)
+                    mov bx, Style_arr
+                    mov ax, [bx + si]   ; bx = char & attribute
                     call PrintFrame
+
+                    _POP_ <cx, si, dx>
                     call Find_Frame_Center
-                    call PrintString  
+                    call Skip_space
+                    call PrintString
 
                     EXIT
+                    endp
 
 ;------------------------------------------------------------------------------------------------------------------
 ; Descr:    prints rectangular frame using video memory 
-; Entry:    frame coordinates and size as defined constants X0, Y0, LEN, WID
+; Entry:    ax  -- style (char & attribute)
+;           frame coordinates and size as defined constants X0, Y0, LEN, WID:
 ;           X0  == horizontal screen offset of rectangle`s upper-left vertex
 ;           Y0  == vertical screen offset of rectangle`s upper-left vertex
 ;           LEN == rectangle`s horizontal size (is measured in characters)
 ;           WID == rectangle`s vertical size (is measured in characters)
 ; Exit:     --
-; Exp:      difined correct input constants
-; Exp:      es --> start video memory [b800h]
-; Destr:    ax,bx, cx, dx, si, di
+; Exp:   1) difined correct input constants
+;        2) es  -> start video memory [b800h]
+; Destr:    bx, cx, dx, si, di
+; Save:     ax
 ;------------------------------------------------------------------------------------------------------------------
 
-PrintFrame         proc
+PrintFrame          proc
 
-                    CALL_PRINTLINE [Frame0.x0], [Frame0.y0], [Frame0.len], HOR_STEP, 4c03h   ; upper hor side
+                    CALL_PRINT_LINE [Frame0.x0], [Frame0.y0], [Frame0.len], HOR_STEP, ax      ; upper hor side
 
-                    CALL_PRINTLINE [Frame0.x0], [Frame0.y0], [Frame0.wid], VERT_STEP, 4c03h  ; left vert side
+                    CALL_PRINT_LINE [Frame0.x0], [Frame0.y0], [Frame0.wid], VERT_STEP, ax     ; left vert side
                     
                     mov bx, [Frame0.y0]        
-                    dec bx                                                                  ; sub 1 to fit real size of frame
+                    dec bx                                                                    ; sub 1 to fit real size of frame
                     mov si, [Frame0.wid]
-                    lea si, [bx + si]                                                       ; si = Y0 + WID - 1
-                    CALL_PRINTLINE [Frame0.x0], si, [Frame0.len], HOR_STEP, 4c03h           ; lower hor side
+                    lea si, [bx + si]                                                         ; si = Y0 + WID - 1
+                    CALL_PRINT_LINE [Frame0.x0], si, [Frame0.len], HOR_STEP, ax               ; lower hor side
                     
                     mov bx, [Frame0.x0]   
-                    dec bx                                                                  ; sub 1 to fit real size of frame
+                    dec bx                                                                    ; sub 1 to fit real size of frame
                     mov si, [Frame0.len]
-                    lea dx, [bx + si]                                                       ; dx = X0 + LEN - 1
-                    CALL_PRINTLINE dx, [Frame0.y0], [Frame0.wid], VERT_STEP, 4c03h          ; right vert side
+                    lea dx, [bx + si]                                                         ; dx = X0 + LEN - 1
+                    CALL_PRINT_LINE dx, [Frame0.y0], [Frame0.wid], VERT_STEP, ax              ; right vert side
 
                     rep ret
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
 ; Descr:    calculates offset from the start of video memory according coordinates of frame`s center
-; Entry:    frame coordinates and size as defined constants X0, Y0, LEN, WID
+; Entry:    cx -- len of the text
+;           frame coordinates and size as defined constants X0, Y0, LEN, WID
 ;           X0  == horizontal screen offset of rectangle`s upper-left vertex
 ;           Y0  == vertical screen offset of rectangle`s upper-left vertex
 ;           LEN == rectangle`s horizontal size (is measured in characters)
@@ -104,26 +146,28 @@ PrintFrame         proc
 ; Exit:     dx  == horizontal screen offset of frame`s center
 ;           si  == vertical screen offset of frame`s center
 ; Exp:      difined correct input constants
-;           es --> start video memory [b800h]
-; Destr:    ax, cx
+;           es  -> start video memory [b800h]
+; Destr:    ax | dx, si
+; Save:     cx
 ;------------------------------------------------------------------------------------------------------------------
 
 Find_Frame_Center   proc
 
+                    push cx              ; save cx
+
                     mov dx, [Frame0.x0]
                     mov ax, [Frame0.len] ; ax = LEN
                     shr ax, 1            ; ax = 0.5 * LEN
-                    xor cx, cx
-                    mov cl, ds:[80h]     ; cl = com line lenth
-                    shr cl, 1            ; cl = 0.5 * com line lenth
+                    shr cx, 1            ; cl = 0.5 * com line lenth
                     add dx, ax      
                     sub dx, cx           ; dx = Xtext
 
                     mov si, [Frame0.y0]
-                    mov ax, [Frame0.wid]  ; ax = WID
-                    shr ax, 1             ; ax = 0.5 * WID
-                    add si, ax            ; si = Ytext                 
+                    mov ax, [Frame0.wid] ; ax = WID
+                    shr ax, 1            ; ax = 0.5 * WID
+                    add si, ax           ; si = Ytext                 
 
+                    pop cx
                     rep ret
                     endp
 
@@ -131,19 +175,22 @@ Find_Frame_Center   proc
 ; Descr:    prints command line using video memory.
 ; Entry:    dx  == horizontal screen offset of frame`s center
 ;           si  == vertical screen offset of frame`s center
+;           cx  == count of symbols in string
 ; Exit:     ah  == printing char attribite (can be changed into the function)
 ;           al  == ASCII of the next character after the string`s last one
-;           cl  == address of command line`s start in ds (82h). Skip extra space (real address is 81h).
-; Exp:      es --> start video memory [b800h]
-; Destr:    ax, cx, bx | dx, si
+;           si  == the first char after the end of the string
+; Exp:   1) es  -> start video memory [b800h]
+;        2) get adr of the str`s start by stack (C decl)
+; Destr:    ax, cx, bx, di | dx, si
 ;------------------------------------------------------------------------------------------------------------------
 
 PrintString 		proc
+
+                    push bp
+                    mov bp, sp          ; save bp
+
                     call CalcAdrXY      ; bx = string start adr in vid mem
-                    xor cx, cx
-					mov cl, ds:[80h]  	; cl = com line lenth
-                    dec cl              ; do not count extra space
-                    mov si, 82h         ; start adr of com line (without extra space)
+                    mov si, [bp + 4]    ; start adr of com line
                     mov di, bx          ; start adr to print string in vid mem
 
 	@@Print_one_char:
@@ -152,6 +199,7 @@ PrintString 		proc
                     stosw               ; print 1 char and it`s attribite
 					loop @@Print_one_char
 
+                    pop bp
                     rep ret
                     endp
 
@@ -163,10 +211,10 @@ PrintString 		proc
 ;           di  == offset (is measured in charaters) between nearby characters
 ; Exit:     bx  == address of the first character
 ;           di  == offset (is measured in bytes) between nearby characters
-; Exp:      es --> start video memory [b800h]
-; Destr:    bx | cx, si
+; Exp:      es  -> start video memory [b800h]
+; Destr:    bx, dx | cx, si
 ; Save:     di
-; Note_1:   macro CALL_PRINTLINE initialises parameters and then calls the PrintLine function itself.
+; Note_1:   macros CALL_PRINT_LINEinitialises parameters and then calls the PrintLine function itself.
 ; Note_2:   constants (HOR_STEP = 1, VERT_STEP = 80) were difined. If parameter STEP = HOR_STEP (VERT_STEP), the horizontal 
 ;           (vertical) line will be printed.
 ;------------------------------------------------------------------------------------------------------------------
@@ -229,7 +277,7 @@ FillFrame          proc
                    dec ax                   ; ax = y0 + wid - 1
 
     @@Fill_one_line:
-                    CALL_PRINTLINE [Frame0.x0], ax, [Frame0.len], HOR_STEP, 4c04h  ; this func changes cx
+                    CALL_PRINT_LINE [Frame0.x0], ax, [Frame0.len], HOR_STEP, 4c03h  ; this func changes cx
                     dec ax
                     cmp ax, [Frame0.y0]
                     jge  @@Fill_one_line
@@ -266,5 +314,69 @@ CalcAdrXY           proc
 
                     rep ret
                     endp
+
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    translate string to number
+; Entry:    si -> the string`s start        
+;           cx -- char counter
+; Exit:     si -> the next char after the string`s last one
+;           dx -- wanted number
+;           cx -- is returned less by count of digits in number (and spaces before)
+; Exp:      ds -> data segment, which string is contained in
+; Destr:    di, ax | si, dx
+;------------------------------------------------------------------------------------------------------------------
+
+Atoi                proc
+                    xor dx, dx
+
+                    call Skip_space
+
+    @@Read_one_digit:
+                    cmp byte ptr [si], '0'  ; if char is digit
+                    jl @@end_proc       
+                    cmp byte ptr [si], '9'
+                    jg @@end_proc
+
+                    mov di, dx          ; di = cur_sum
+                    shl di, 1           ; di = 2 * cur_sum
+                    shl dx, 3           ; dx = 8 * cur_sum
+                    add dx, di          ; dx = 10 * cur_sum
+                    
+                    lodsb
+                    xor ah, ah
+                    sub ax, '0'
+                    add dx, ax          ; dx = 10 * cur_sum + cur_digit
+
+                    dec cx
+                    jmp @@Read_one_digit
+
+
+    @@end_proc:     rep ret
+                    endp
+
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    skip spaces untill first non-space character
+; Entry:    si -> the first char to check out
+;           cx -- char counter
+; Exit:     si -> the first non-space char
+;           cx -- is returned less by count of spaces
+; Exp:      --
+; Destr:    | si
+;------------------------------------------------------------------------------------------------------------------
+
+Skip_space          proc
+
+    @@Skip_one_space:
+                    cmp byte ptr [si], ' '  ; if char is space
+                    jne @@end_proc
+                    inc si                  ; next char
+                    dec cx
+                    jmp @@Skip_one_space
+                    
+    @@end_proc:
+                    rep ret
+                    endp
+
+;===============================================================================================================================================================================================
 
 end                 Start
