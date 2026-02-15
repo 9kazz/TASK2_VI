@@ -20,19 +20,15 @@ PRINTW              macro base, offset, char
                     mov word ptr es:[base + offset], char
                     endm
 
-CALL_PRINTLINE      macro X0, Y0, length, step
+CALL_PRINTLINE      macro X0, Y0, length, step, char
                     mov dx, X0
                     mov si, Y0
                     mov cx, length
                     dec cx          ; sub 1 to fit real size of frame. proc "PrintLine" print one extra char
                     mov di, step
+                    push char       ; Cdecl func call
                     call PrintLine
-                    endm
-
-MUL2                macro num1, num2
-                    mov ax, num1
-                    mul num2
-                    mov num1, ax
+                    pop cx          ; destroy arg
                     endm
 
 ;=======================================
@@ -79,21 +75,21 @@ Start:
 
 PrintFrame         proc
 
-                    CALL_PRINTLINE [Frame0.x0], [Frame0.y0], [Frame0.len], HOR_STEP   ; upper hor side
+                    CALL_PRINTLINE [Frame0.x0], [Frame0.y0], [Frame0.len], HOR_STEP, 4c03h   ; upper hor side
 
-                    CALL_PRINTLINE [Frame0.x0], [Frame0.y0], [Frame0.wid], VERT_STEP  ; left vert side
+                    CALL_PRINTLINE [Frame0.x0], [Frame0.y0], [Frame0.wid], VERT_STEP, 4c03h  ; left vert side
                     
                     mov bx, [Frame0.y0]        
-                    dec bx                                                            ; sub 1 to fit real size of frame
+                    dec bx                                                                  ; sub 1 to fit real size of frame
                     mov si, [Frame0.wid]
-                    lea si, [bx + si]                                                 ; si = Y0 + WID - 1
-                    CALL_PRINTLINE [Frame0.x0], si, [Frame0.len], HOR_STEP            ; lower hor side
+                    lea si, [bx + si]                                                       ; si = Y0 + WID - 1
+                    CALL_PRINTLINE [Frame0.x0], si, [Frame0.len], HOR_STEP, 4c03h           ; lower hor side
                     
                     mov bx, [Frame0.x0]   
-                    dec bx                                                            ; sub 1 to fit real size of frame
+                    dec bx                                                                  ; sub 1 to fit real size of frame
                     mov si, [Frame0.len]
-                    lea dx, [bx + si]                                                 ; dx = X0 + LEN - 1
-                    CALL_PRINTLINE dx, [Frame0.y0], [Frame0.wid], VERT_STEP           ; right vert side
+                    lea dx, [bx + si]                                                       ; dx = X0 + LEN - 1
+                    CALL_PRINTLINE dx, [Frame0.y0], [Frame0.wid], VERT_STEP, 4c03h          ; right vert side
 
                     rep ret
                     endp
@@ -169,7 +165,7 @@ PrintString 		proc
 ;           di  == offset (is measured in bytes) between nearby characters
 ; Exp:      es --> start video memory [b800h]
 ; Destr:    bx | cx, si
-; Save:     dx, di
+; Save:     di
 ; Note_1:   macro CALL_PRINTLINE initialises parameters and then calls the PrintLine function itself.
 ; Note_2:   constants (HOR_STEP = 1, VERT_STEP = 80) were difined. If parameter STEP = HOR_STEP (VERT_STEP), the horizontal 
 ;           (vertical) line will be printed.
@@ -177,7 +173,11 @@ PrintString 		proc
 
 PrintLine           proc
 
+                    push bp
+                    mov bp, sp          ; save bp
+
                     call CalcAdrXY      ; bx = base
+                    mov dx, [bp + 4]    ; dx = char with attribute (1 arg)
                     
                     cmp di, HOR_STEP    ; if di == HOR_STEP
                     je @@hor_line
@@ -191,7 +191,7 @@ PrintLine           proc
                     mov si, cx
                     shl si, 1   ; si = 2*cx = 2 * HOR_STEP
 
-                    PRINTW bx, si, 4c03h
+                    PRINTW bx, si, dx
                     loop @@hor_line
 
                     jmp @@end_proc
@@ -204,11 +204,12 @@ PrintLine           proc
                     add si, di          ; si = 5*cx
                     shl si, 5           ; si = 160*cx = 2 * VERT_STEP
 
-                    PRINTW bx, si, 4c03h
+                    PRINTW bx, si, dx
                     loop @@vert_line
 
     @@end_proc:      
-                    PRINTW bx, 0, 4c03h
+                    PRINTW bx, 0, dx
+                    pop bp
                     rep ret
                     endp
 
@@ -228,7 +229,7 @@ FillFrame          proc
                    dec ax                   ; ax = y0 + wid - 1
 
     @@Fill_one_line:
-                    CALL_PRINTLINE [Frame0.x0], ax, [Frame0.len], HOR_STEP  ; this func changes cx
+                    CALL_PRINTLINE [Frame0.x0], ax, [Frame0.len], HOR_STEP, 4c04h  ; this func changes cx
                     dec ax
                     cmp ax, [Frame0.y0]
                     jge  @@Fill_one_line
