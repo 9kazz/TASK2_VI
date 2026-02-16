@@ -82,19 +82,24 @@ MAIN                proc
                     call Skip_space
                     call Atoi
 
-                    _PUSH_ <dx, si, cx, dx>
+                    _PUSH_ <si, cx, dx>
                     call FillFrame
 
                     pop si              ; si = idx in Style_arr
                     shl si, 1           ; si = 2 * si (bytes)
-                    mov bx, Style_arr
+                    lea bx, Style_arr
                     mov ax, [bx + si]   ; bx = char & attribute
                     call PrintFrame
 
-                    _POP_ <cx, si, dx>
+                    pop cx
                     call Find_Frame_Center
+                    mov ax, si          ; dx = Ytext
+                    pop si              ; si contains adr of string, but PrintString use si as Ytext
                     call Skip_space
+                    push si
+                    mov si, ax
                     call PrintString
+                    pop si
 
                     EXIT
                     endp
