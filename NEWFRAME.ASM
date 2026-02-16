@@ -43,6 +43,26 @@ _POP_               macro args1
                     endm
                     endm
 
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    returnes elem from array according to idx
+; Entry:    arr -> array (could be as lbel)
+;           idx -- index in array
+; Exit:     si  -- offset is measured in bytes
+;           bx  -> array
+;           ax  -- returned value
+; Exp:      --
+; Destr:    | ax, bx, si
+;------------------------------------------------------------------------------------------------------------------
+
+GET_ARR_ELEM_W      macro arr, idx 
+
+                    mov si, idx
+                    shl si, 1           ; idx = 2 * si (bytes)
+                    lea bx, arr
+                    mov ax, [bx + si]   ; ax = char & attribute
+
+                    endm                
+
 ;===================================================================================================================
 
 FramePar_t          struc
@@ -85,10 +105,8 @@ MAIN                proc
                     _PUSH_ <si, cx, dx>
                     call FillFrame
 
-                    pop si              ; si = idx in Style_arr
-                    shl si, 1           ; si = 2 * si (bytes)
-                    lea bx, Style_arr
-                    mov ax, [bx + si]   ; bx = char & attribute
+                    pop si                          ; si = idx in Style_arr (was pushed as dx)
+                    GET_ARR_ELEM_W Style_arr, si    ; ax = char & attribute
                     call PrintFrame
 
                     pop cx
@@ -267,11 +285,15 @@ PrintLine           proc
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
-; Descr:    
-; Entry:              
-; Exit:     
-; Exp:      
-; Destr:    
+; Descr:    fill frame inside by given char
+; Entry:    frame coordinates and size as defined constants X0, Y0, LEN, WID
+;           X0  == horizontal screen offset of rectangle`s upper-left vertex
+;           Y0  == vertical screen offset of rectangle`s upper-left vertex
+;           LEN == rectangle`s horizontal size (is measured in characters)
+;           WID == rectangle`s vertical size (is measured in characters)
+; Exit:     --    
+; Exp:      es  -> start video memory [b800h]
+; Destr:    ax, bx, dx, cx, si, di |
 ;------------------------------------------------------------------------------------------------------------------
 
 FillFrame          proc
