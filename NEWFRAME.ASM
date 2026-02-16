@@ -43,26 +43,6 @@ _POP_               macro args1
                     endm
                     endm
 
-;------------------------------------------------------------------------------------------------------------------
-; Descr:    returnes elem from array according to idx
-; Entry:    arr -> array (could be as lbel)
-;           idx -- index in array
-; Exit:     si  -- offset is measured in bytes
-;           bx  -> array
-;           ax  -- returned value
-; Exp:      --
-; Destr:    | ax, bx, si
-;------------------------------------------------------------------------------------------------------------------
-
-GET_ARR_ELEM_W      macro arr, idx 
-
-                    mov si, idx
-                    shl si, 1           ; idx = 2 * si (bytes)
-                    lea bx, arr
-                    mov ax, [bx + si]   ; ax = char & attribute
-
-                    endm                
-
 ;===================================================================================================================
 
 FramePar_t          struc
@@ -70,10 +50,16 @@ FramePar_t          struc
     y0              dw 0        ; upper-left vertex coordinate y
     len             dw 0        ; horizontal size (lenth)
     wid             dw 0        ; vertical size (width)
-    fill            dw 4c00h    ; chars to filling and its attribite
     style           dw 0        ; frame style
 FramePar_t          ends
     
+Style_t             struc
+    frame           dw 4c03h
+    fill            dw 0000h
+    text            dw 0000h
+    feature         dw 0000h
+                    ends
+
 HOR_STEP            = 1
 VERT_STEP           = 80  
 
@@ -82,12 +68,15 @@ VERT_STEP           = 80
 Start               proc              
                     jmp    @@Skip_Inits
 
-                    Frame0 FramePar_t <10, 10, 5, 5, 4c00h, 0>
+                    Frame0 FramePar_t <10, 10, 15, 5, 0>
 
-                    Style_arr   dw 4c03h
-                                dw 4c03h or 8000h
+                    Style_arr   Style_t <4c03h, 0000h, 0F00h, 0000h>
+                                Style_t <4c03h or 8000h, 4c00h, 0FFFFh, 0000h>
+
+                    Style_code  Style_t <,,,>
 
     @@Skip_Inits:   call MAIN
+                    EXIT
                     endp
 
                     
@@ -99,33 +88,52 @@ MAIN                proc
                     mov cl, ds:[80h]    ; lenth of the command line
                     mov si, 81h         ; start of command line
 
-                    call Skip_space
-                    call Atoi
+                    CALL Skip_space
+                    CALL Atoi
 
-                    _PUSH_ <si, cx, dx>
-                    call FillFrame
+                    shl dx, 3                       ; dx = sizeof(Style_arr) * idx
+                    _PUSH_ <si, cx, bx, es, di>     ; save regs
+                    mov bx, dx                      ; bx = offset in arr
+                    lea dx, [bx + Style_arr]        ; dx -> Style_arr[idx] 
 
-                    pop si                          ; si = idx in Style_arr (was pushed as dx)
-                    GET_ARR_ELEM_W Style_arr, si    ; ax = char & attribute
-                    call PrintFrame
+                    mov bx, ds
+                    mov es, bx                      ; es -> data seg
+                    mov si, dx                      ; si -> Style_arr[idx]
+                    lea di, [Style_code]            ; di -> Style_code
+                    mov cx, 4
+                    rep movsw                       ; movs 4 words. *Style_code = Style_arr[idx]
+                    _POP_ <di, es, bx>              ; recover regs (SI, CX -- STAY)
 
-                    pop cx
-                    call Find_Frame_Center
-                    mov ax, si          ; dx = Ytext
-                    pop si              ; si contains adr of string, but PrintString use si as Ytext
-                    call Skip_space
-                    push si
-                    mov si, ax
-                    call PrintString
+                    mov si, [Style_code.fill]       ; si = char & attribute            
+                    push si                
+                    CALL FillFrame
+                    pop si                 
+
+                    mov si, [Style_code.frame]      ; si = char & attribute            
+                    push si               
+                    CALL PrintFrame
+                    pop si                 
+
+                    pop cx                          ; recover cx
+                    CALL Find_Frame_Center
+                    mov ax, si                      ; ax = si = Ytext
+                    pop si                          ; si = adr of string in command line (but PrintString use si as Ytext)
+                    CALL Skip_space
+
+                    push si                         ; si -> start of the printing string
+                    mov si, [Style_code.text]       ; si = char & attribute            
+                    push si                         
+                    mov si, ax                      ; si = ax = Ytext
+                    CALL PrintString
+                    pop si      
                     pop si
 
-                    EXIT
+                    rep ret
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
 ; Descr:    prints rectangular frame using video memory 
-; Entry:    ax  -- style (char & attribute)
-;           frame coordinates and size as defined constants X0, Y0, LEN, WID:
+; Entry:    frame coordinates and size as defined constants X0, Y0, LEN, WID:
 ;           X0  == horizontal screen offset of rectangle`s upper-left vertex
 ;           Y0  == vertical screen offset of rectangle`s upper-left vertex
 ;           LEN == rectangle`s horizontal size (is measured in characters)
@@ -133,11 +141,17 @@ MAIN                proc
 ; Exit:     --
 ; Exp:   1) difined correct input constants
 ;        2) es  -> start video memory [b800h]
+;        3) get style (char & attribute) by stack (C decl)
 ; Destr:    bx, cx, dx, si, di
 ; Save:     ax
 ;------------------------------------------------------------------------------------------------------------------
 
 PrintFrame          proc
+
+                    push bp
+                    mov bp, sp          ; save bp
+
+                    mov ax, [bp + 4]    ; ax = style (char & attribute)
 
                     CALL_PRINT_LINE [Frame0.x0], [Frame0.y0], [Frame0.len], HOR_STEP, ax      ; upper hor side
 
@@ -155,6 +169,7 @@ PrintFrame          proc
                     lea dx, [bx + si]                                                         ; dx = X0 + LEN - 1
                     CALL_PRINT_LINE dx, [Frame0.y0], [Frame0.wid], VERT_STEP, ax              ; right vert side
 
+                    pop bp
                     rep ret
                     endp
 
@@ -183,7 +198,8 @@ Find_Frame_Center   proc
                     shr ax, 1            ; ax = 0.5 * LEN
                     shr cx, 1            ; cl = 0.5 * com line lenth
                     add dx, ax      
-                    sub dx, cx           ; dx = Xtext
+                    sub dx, cx           
+                    inc dx               ; dx = Xtext
 
                     mov si, [Frame0.y0]
                     mov ax, [Frame0.wid] ; ax = WID
@@ -203,7 +219,9 @@ Find_Frame_Center   proc
 ;           al  == ASCII of the next character after the string`s last one
 ;           si  == the first char after the end of the string
 ; Exp:   1) es  -> start video memory [b800h]
-;        2) get adr of the str`s start by stack (C decl)
+;        2) get adr of the str`s start and style by stack (C decl)
+;               1 arg: style
+;               2 arg: start adr
 ; Destr:    ax, cx, bx, di | dx, si
 ;------------------------------------------------------------------------------------------------------------------
 
@@ -213,11 +231,12 @@ PrintString 		proc
                     mov bp, sp          ; save bp
 
                     call CalcAdrXY      ; bx = string start adr in vid mem
-                    mov si, [bp + 4]    ; start adr of com line
+                    mov si, [bp + 6]    ; start adr of com line
                     mov di, bx          ; start adr to print string in vid mem
+					                    
+                    mov ax, [bp + 4]    ; store attribite (char will be changed by loadsb)
 
 	@@Print_one_char:
-					mov ah, 4ch         ; store attribite
                     lodsb               ; save 1 char in al
                     stosw               ; print 1 char and it`s attribite
 					loop @@Print_one_char
@@ -292,23 +311,30 @@ PrintLine           proc
 ;           LEN == rectangle`s horizontal size (is measured in characters)
 ;           WID == rectangle`s vertical size (is measured in characters)
 ; Exit:     --    
-; Exp:      es  -> start video memory [b800h]
+; Exp:   1) es  -> start video memory [b800h]
+;        2) get style (char & attribute) by stack (C decl)
 ; Destr:    ax, bx, dx, cx, si, di |
 ;------------------------------------------------------------------------------------------------------------------
 
-FillFrame          proc
+FillFrame           proc
 
-                   mov bx, [Frame0.y0]      ; bx = y0
-                   mov si, [Frame0.wid]     ; si = wid
-                   lea ax, [bx + si]        ; ax = y0 + wid
-                   dec ax                   ; ax = y0 + wid - 1
+                    push bp                  ; save bp
+                    mov bp, sp
 
-    @@Fill_one_line:
-                    CALL_PRINT_LINE [Frame0.x0], ax, [Frame0.len], HOR_STEP, 4c03h  ; this func changes cx
-                    dec ax
-                    cmp ax, [Frame0.y0]
-                    jge  @@Fill_one_line
+                    mov bp, [bp + 4]         ; !!! BP = style (char & attribute) !!!
 
+                    mov bx, [Frame0.y0]      ; bx = y0
+                    mov si, [Frame0.wid]     ; si = wid
+                    lea ax, [bx + si]        ; ax = y0 + wid
+                    dec ax                   ; ax = y0 + wid - 1             
+                                            
+    @@Fill_one_line:                        
+                    CALL_PRINT_LINE [Frame0.x0], ax, [Frame0.len], HOR_STEP, bp  ; this func changes cx
+                    dec ax                                               ;   ~~
+                    cmp ax, [Frame0.y0]                                  ;   ^
+                    jge  @@Fill_one_line                                 ;   |
+
+                    pop bp
                     rep ret
                     endp
 
