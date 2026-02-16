@@ -70,8 +70,9 @@ Start               proc
 
                     Frame0 FramePar_t <10, 10, 15, 5, 0>
 
-                    Style_arr   Style_t <4c03h, 0000h, 0F00h, 0000h>
+                    Style_arr   Style_t <02DBh, 0220h, 0A3Eh, 0000h>
                                 Style_t <4c03h or 8000h, 4c00h, 0FFFFh, 0000h>
+                                
 
                     Style_code  Style_t <,,,>
 
