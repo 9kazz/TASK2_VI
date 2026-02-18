@@ -72,7 +72,8 @@ Start               proc
 
                     Style_arr   Style_t <02DBh, 0220h, 0A3Eh, 0000h>
                                 Style_t <4c03h or 8000h, 4c00h, 0FFFFh, 0000h>
-                                
+                                Style_t <8423h, 0420h, 0C21h, 0000h>
+                        
 
                     Style_code  Style_t <,,,>
 
@@ -91,18 +92,10 @@ MAIN                proc
 
                     CALL Skip_space
                     CALL Atoi
-
                     shl dx, 3                       ; dx = sizeof(Style_arr) * idx
+                    
                     _PUSH_ <si, cx, bx, es, di>     ; save regs
-                    mov bx, dx                      ; bx = offset in arr
-                    lea dx, [bx + Style_arr]        ; dx -> Style_arr[idx] 
-
-                    mov bx, ds
-                    mov es, bx                      ; es -> data seg
-                    mov si, dx                      ; si -> Style_arr[idx]
-                    lea di, [Style_code]            ; di -> Style_code
-                    mov cx, 4
-                    rep movsw                       ; movs 4 words. *Style_code = Style_arr[idx]
+                    CALL Get_Style                  ; ds:[Style_code] : filled struct of style
                     _POP_ <di, es, bx>              ; recover regs (SI, CX -- STAY)
 
                     mov si, [Style_code.fill]       ; si = char & attribute            
@@ -129,7 +122,7 @@ MAIN                proc
                     pop si      
                     pop si
 
-                    rep ret
+                    ret
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -171,7 +164,7 @@ PrintFrame          proc
                     CALL_PRINT_LINE dx, [Frame0.y0], [Frame0.wid], VERT_STEP, ax              ; right vert side
 
                     pop bp
-                    rep ret
+                    ret
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -208,7 +201,7 @@ Find_Frame_Center   proc
                     add si, ax           ; si = Ytext                 
 
                     pop cx
-                    rep ret
+                    ret
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -243,7 +236,7 @@ PrintString 		proc
 					loop @@Print_one_char
 
                     pop bp
-                    rep ret
+                    ret
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -301,7 +294,7 @@ PrintLine           proc
     @@end_proc:      
                     PRINTW bx, 0, dx
                     pop bp
-                    rep ret
+                    ret
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -336,7 +329,7 @@ FillFrame           proc
                     jge  @@Fill_one_line                                 ;   |
 
                     pop bp
-                    rep ret
+                    ret
                     endp
 
 
@@ -366,7 +359,7 @@ CalcAdrXY           proc
                     pop dx
                     pop si
 
-                    rep ret
+                    ret
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -405,7 +398,7 @@ Atoi                proc
                     jmp @@Read_one_digit
 
 
-    @@end_proc:     rep ret
+    @@end_proc:     ret
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -428,7 +421,30 @@ Skip_space          proc
                     jmp @@Skip_one_space
                     
     @@end_proc:
-                    rep ret
+                    ret
+                    endp
+
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    read style identifier from command line and store it in memory (in ds:[Style_code])
+; Entry:    --
+; Exit:     ds:[Style_code] : filled struct of style
+; Exp:      --
+; Destr:    si, cx, bx, es, di |
+;------------------------------------------------------------------------------------------------------------------
+
+Get_Style           proc
+
+                    mov bx, dx                      ; bx = offset in arr
+                    lea dx, [bx + Style_arr]        ; dx -> Style_arr[idx] 
+
+                    mov bx, ds
+                    mov es, bx                      ; es -> data seg
+                    mov si, dx                      ; si -> Style_arr[idx]
+                    lea di, [Style_code]            ; di -> Style_code
+                    mov cx, 4
+                    rep movsw                       ; movs 4 words. *Style_code = Style_arr[idx]
+
+                    ret
                     endp
 
 ;===============================================================================================================================================================================================
