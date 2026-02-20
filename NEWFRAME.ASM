@@ -54,11 +54,18 @@ FramePar_t          struc
 FramePar_t          ends
     
 Style_t             struc
-    frame           dw 4c03h
-    fill            dw 0000h
-    text            dw 0000h
+    frame           dw 02DBh
+    fill            dw 0220h
+    text            dw 0A3Eh
     feature         dw 0000h
                     ends
+
+; Style_t             struc
+;     frame           dw 8423h
+;     fill            dw 0420h
+;     text            dw 0C21h
+;     feature         dw 0000h
+;                     ends
 
 HOR_STEP            = 1
 VERT_STEP           = 80  
@@ -85,42 +92,32 @@ Start               proc
 MAIN                proc
 
                     ESVIDMEM
-
+dd 90909090h
                     xor ch, ch
                     mov cl, ds:[80h]    ; lenth of the command line
                     mov si, 81h         ; start of command line
 
-                    CALL Skip_space
-                    CALL Atoi
-                    shl dx, 3                       ; dx = sizeof(Style_arr) * idx
-                    
-                    _PUSH_ <si, cx, bx, es, di>     ; save regs
-                    CALL Get_Style                  ; ds:[Style_code] : filled struct of style
-                    _POP_ <di, es, bx>              ; recover regs (SI, CX -- STAY)
+                    CALL Get_comline_opt            ; si -> the next char after flags
 
-                    mov si, [Style_code.fill]       ; si = char & attribute            
-                    push si                
+                    mov ax, [Style_code.fill]       ; ax = char & attribute  
+                    PUSH ax                         ; FillFrame demands style atr in the stack
                     CALL FillFrame
-                    pop si                 
+                    POP ax
 
-                    mov si, [Style_code.frame]      ; si = char & attribute            
-                    push si               
+                    mov ax, [Style_code.frame]      ; ax = char & attribute   
+                    PUSH ax                         ; PrintFrame demands style atr in the stack
                     CALL PrintFrame
-                    pop si                 
+                    POP ax
 
-                    pop cx                          ; recover cx
-                    CALL Find_Frame_Center
-                    mov ax, si                      ; ax = si = Ytext
-                    pop si                          ; si = adr of string in command line (but PrintString use si as Ytext)
+                    CALL Find_Frame_Center          ; bx = offest of printing string in video memmory
                     CALL Skip_space
-
-                    push si                         ; si -> start of the printing string
-                    mov si, [Style_code.text]       ; si = char & attribute            
-                    push si                         
-                    mov si, ax                      ; si = ax = Ytext
-                    CALL PrintString
-                    pop si      
-                    pop si
+                    dd 90909090h
+                    PUSH si                         ; si -> start of the printing string | Cdecl
+                    mov ax, [Style_code.text]       
+                    PUSH ax                         ; ax = char & attribute | Cdecl
+                    PUSH bx                         ; bx = start offset in vid mem | Cdecl
+                    CALL PrintString                
+                    _POP_ <bx, ax, si>              ; clear the stack
 
                     ret
                     endp
@@ -136,14 +133,16 @@ MAIN                proc
 ; Exp:   1) difined correct input constants
 ;        2) es  -> start video memory [b800h]
 ;        3) get style (char & attribute) by stack (C decl)
-; Destr:    bx, cx, dx, si, di
-; Save:     ax
+; Destr:    --
+; Save:     bx, cx, dx, si, di | ax
 ;------------------------------------------------------------------------------------------------------------------
 
 PrintFrame          proc
 
                     push bp
                     mov bp, sp          ; save bp
+
+                    _PUSH_ <bx, cx, dx, si, di>  ; save regs
 
                     mov ax, [bp + 4]    ; ax = style (char & attribute)
 
@@ -163,6 +162,7 @@ PrintFrame          proc
                     lea dx, [bx + si]                                                         ; dx = X0 + LEN - 1
                     CALL_PRINT_LINE dx, [Frame0.y0], [Frame0.wid], VERT_STEP, ax              ; right vert side
 
+                    _POP_ <di, si, dx, cx, bx>  ; recover regs
                     pop bp
                     ret
                     endp
@@ -175,17 +175,16 @@ PrintFrame          proc
 ;           Y0  == vertical screen offset of rectangle`s upper-left vertex
 ;           LEN == rectangle`s horizontal size (is measured in characters)
 ;           WID == rectangle`s vertical size (is measured in characters)
-; Exit:     dx  == horizontal screen offset of frame`s center
-;           si  == vertical screen offset of frame`s center
+; Exit:     bx  -- offset in video memmory
 ; Exp:      difined correct input constants
 ;           es  -> start video memory [b800h]
-; Destr:    ax | dx, si
-; Save:     cx
+; Destr:    ax | 
+; Save:     cx, dx, si
 ;------------------------------------------------------------------------------------------------------------------
 
 Find_Frame_Center   proc
 
-                    push cx              ; save cx
+                    _PUSH_ <cx, dx, si>  ; save regs
 
                     mov dx, [Frame0.x0]
                     mov ax, [Frame0.len] ; ax = LEN
@@ -193,50 +192,59 @@ Find_Frame_Center   proc
                     shr cx, 1            ; cl = 0.5 * com line lenth
                     add dx, ax      
                     sub dx, cx           
-                    inc dx               ; dx = Xtext
 
                     mov si, [Frame0.y0]
                     mov ax, [Frame0.wid] ; ax = WID
                     shr ax, 1            ; ax = 0.5 * WID
                     add si, ax           ; si = Ytext                 
 
-                    pop cx
+                    CALL CalcAdrXY       ; bx = offset
+
+                    _POP_ <si, dx, cx>   ; recover regs
                     ret
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
 ; Descr:    prints command line using video memory.
-; Entry:    dx  == horizontal screen offset of frame`s center
-;           si  == vertical screen offset of frame`s center
-;           cx  == count of symbols in string
+; Entry:    cx  == count of symbols in string
 ; Exit:     ah  == printing char attribite (can be changed into the function)
 ;           al  == ASCII of the next character after the string`s last one
 ;           si  == the first char after the end of the string
+;           cx  == the rest length of the command line
 ; Exp:   1) es  -> start video memory [b800h]
-;        2) get adr of the str`s start and style by stack (C decl)
-;               1 arg: style
-;               2 arg: start adr
-; Destr:    ax, cx, bx, di | dx, si
+;        2) demands some data in  the stack (Cdecl):
+;               1 arg: starting adr in vid mem
+;               2 arg: style
+;               3 arg: cur command line adr
+; Destr:    ax | si, cx
+; Save:     di
 ;------------------------------------------------------------------------------------------------------------------
 
 PrintString 		proc
 
+                    CALL Skip_space
+
                     push bp
                     mov bp, sp          ; save bp
 
-                    call CalcAdrXY      ; bx = string start adr in vid mem
-                    mov si, [bp + 6]    ; start adr of com line
-                    mov di, bx          ; start adr to print string in vid mem
-					                    
-                    mov ax, [bp + 4]    ; store attribite (char will be changed by loadsb)
+                    PUSH di             ; save reg
+
+                    test cx, cx         ; if no string to print
+                    jz @@end_of_func
+
+                    mov si, [bp + 8]    ; start adr of com line
+                    mov ax, [bp + 6]    ; store attribite (char will be changed by lodsb)
+                    mov di, [bp + 4]    ; start adr to print string in vid mem
 
 	@@Print_one_char:
                     lodsb               ; save 1 char in al
                     stosw               ; print 1 char and it`s attribite
 					loop @@Print_one_char
 
+    @@end_of_func:
+                    POP di              ; recover reg
                     pop bp
-                    ret
+                    ret    
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -307,13 +315,16 @@ PrintLine           proc
 ; Exit:     --    
 ; Exp:   1) es  -> start video memory [b800h]
 ;        2) get style (char & attribute) by stack (C decl)
-; Destr:    ax, bx, dx, cx, si, di |
+; Destr:    ax |
+; Save:     bx, dx, cx, si, di 
 ;------------------------------------------------------------------------------------------------------------------
 
 FillFrame           proc
 
                     push bp                  ; save bp
                     mov bp, sp
+
+                    _PUSH_ <bx, dx, cx, si, di>     ; save regs
 
                     mov bp, [bp + 4]         ; !!! BP = style (char & attribute) !!!
 
@@ -328,6 +339,7 @@ FillFrame           proc
                     cmp ax, [Frame0.y0]                                  ;   ^
                     jge  @@Fill_one_line                                 ;   |
 
+                    _POP_ <di, si, cx, dx, bx>  ; recover regs
                     pop bp
                     ret
                     endp
@@ -344,8 +356,7 @@ FillFrame           proc
 ;------------------------------------------------------------------------------------------------------------------
 
 CalcAdrXY           proc
-                    push si
-                    push dx          
+                    _PUSH_ <si, dx>
 
                     shl dx, 1       ; dx = 2x bytes
          			mov bx, si	    ; ax = y
@@ -356,24 +367,26 @@ CalcAdrXY           proc
                     mov bx, dx
                     add bx, si
 
-                    pop dx
-                    pop si
-
+                    _POP_ <dx, si>
                     ret
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
 ; Descr:    translate string to number
 ; Entry:    si -> the string`s start        
-;           cx -- char counter
+;          *cx -- char counter
 ; Exit:     si -> the next char after the string`s last one
 ;           dx -- wanted number
 ;           cx -- is returned less by count of digits in number (and spaces before)
 ; Exp:      ds -> data segment, which string is contained in
-; Destr:    di, ax | si, dx
+; Destr:    ax | si, dx, cx
+; Save:     di
 ;------------------------------------------------------------------------------------------------------------------
 
 Atoi                proc
+
+                    push di             ; save di
+
                     xor dx, dx
 
                     call Skip_space
@@ -390,15 +403,15 @@ Atoi                proc
                     add dx, di          ; dx = 10 * cur_sum
                     
                     lodsb
-                    xor ah, ah
-                    sub ax, '0'
+                    and ax, 0Fh
                     add dx, ax          ; dx = 10 * cur_sum + cur_digit
 
                     dec cx
                     jmp @@Read_one_digit
 
 
-    @@end_proc:     ret
+    @@end_proc:     pop di              ; recover di
+                    ret
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -428,23 +441,137 @@ Skip_space          proc
 ; Descr:    read style identifier from command line and store it in memory (in ds:[Style_code])
 ; Entry:    --
 ; Exit:     ds:[Style_code] : filled struct of style
-; Exp:      --
-; Destr:    si, cx, bx, es, di |
+; Exp:      dx == offset from the start of the array
+;           es -> data seg
+; Destr:    --
+; Save:     si, di, cx, bx
 ;------------------------------------------------------------------------------------------------------------------
 
 Get_Style           proc
 
+                    _PUSH_ <si, di, cx, bx>         ; save regs
+
+                    shl dx, 3                       ; dx = sizeof(Style_arr) * idx
                     mov bx, dx                      ; bx = offset in arr
                     lea dx, [bx + Style_arr]        ; dx -> Style_arr[idx] 
 
-                    mov bx, ds
-                    mov es, bx                      ; es -> data seg
                     mov si, dx                      ; si -> Style_arr[idx]
                     lea di, [Style_code]            ; di -> Style_code
                     mov cx, 4
                     rep movsw                       ; movs 4 words. *Style_code = Style_arr[idx]
 
+                    _POP_ <bx, cx, di, si>          ; recover regs  
+
                     ret
+                    endp
+
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    recognizes all command line`s flags and execute appropriate proccess
+; Entry:    si -> the string`s start        
+;           cx -- char counter
+; Exit:     si -> the first non-space char
+;           cx -- is returned less by count of readed characters
+;           ax == 0 guaranteed
+; Exp:      --
+; Destr:    ax, | si, cx
+; Save:     dx, di, es
+;------------------------------------------------------------------------------------------------------------------
+
+Get_comline_opt     proc
+                    _PUSH_  <dx, di, es>     ; save regs
+                    
+    @@next_flag:    CALL Get_one_opt
+                    test ax, ax              ; if ax-flag == 0, break cycle
+                    jnz @@next_flag
+
+                    _POP_ <es, di, dx>       ; recover regs
+                    endp
+
+
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    recognizes one command line`s flag and execute appropriate proccess
+; Entry:    si -> the string`s start        
+;           cx -- char counter
+; Exit:     si -> the first non-space char
+;           cx -- is returned less by count of readed characters
+;           ax -- exit flag: 
+;                 ax == 1 -- flag was scanned and executed
+;                 ax == 0 -- func don`t find any flags or flag is incorect
+; Exp:      --
+; Destr:    ax, dx, di, es | si, cx
+;------------------------------------------------------------------------------------------------------------------
+
+Get_one_opt     proc
+
+                    _PUSH_  <dx, di, es>     ; save regs
+
+                    CALL Skip_space
+
+                    lodsb       ; al = the next comline`s char
+                    cmp al, '-'
+                    jne @@not_flag
+                    dec cx
+
+                    lodsb       ; al = flag
+                    dec cx
+                    mov di, ds
+                    mov es, di  ; es -> data seg
+
+                    ; SWITCH
+                    cmp al, 'x'
+                        je @@coordinate_x
+                    cmp al, 'y'
+                        je @@coordinate_y
+                    cmp al, 'l'
+                        je @@length
+                    cmp al, 'w'
+                        je @@width
+                    cmp al, 's'
+                        je @@style
+
+                    jmp @@default
+                    ; END OF SWITCH
+                    
+    @@switch_end:   mov ax, dx      ; ax = dx = value after flag
+                    stosw
+                    test ax, ax     ; if ax == 0
+                    jnz @@end_of_func
+                    inc ax          ; set ax-flag (if ax == 0 before)
+
+    @@end_of_func:  _POP_ <es, di, dx>
+                    ret
+
+;-------------------------------------------------------------------
+
+    @@not_flag:     dec si      ; return si to previous char
+                    xor ax, ax  ; clear ax-flag (there are no flags)
+                    jmp @@end_of_func
+
+                    ; CASES
+    @@coordinate_x: lea di, [Frame0.x0]   
+                    CALL Atoi   ; dx = value after flag
+                    jmp @@switch_end
+    
+    @@coordinate_y: lea di, [Frame0.y0] 
+                    CALL Atoi   ; dx = value after flag      
+                    jmp @@switch_end
+    
+    @@length:       lea di, [Frame0.len]   
+                    CALL Atoi   ; dx = value after flag    
+                    jmp @@switch_end
+    
+    @@width:        lea di, [Frame0.wid]   
+                    CALL Atoi   ; dx = value after flag
+                    jmp @@switch_end                  
+
+    @@style:        CALL Atoi
+                    CALL Get_Style   ; ds:[Style_code] : filled struct of style                                                                                      
+    ; @@style go though to @@default, then execute jmp @@end_of_func
+
+    @@default:      xor ax, ax       ; clear ax-flag (incorrect flag)
+                    jmp @@end_of_func
+                    ; END OF CASES
+
                     endp
 
 ;===============================================================================================================================================================================================
