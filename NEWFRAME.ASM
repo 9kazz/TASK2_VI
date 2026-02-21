@@ -75,8 +75,9 @@ Start               proc
                                 Style_t <4c03h or 8000h, 4c00h, 0FFFFh, 0000h>
                                 Style_t <8423h, 0420h, 0C21h, 0000h>
                         
-
                     Style_code  Style_t <,,,>
+
+                    LineLen_arr db 16 dup(0)
 
     @@Skip_Inits:   call MAIN
                     EXIT
@@ -103,6 +104,7 @@ MAIN                proc
                     CALL PrintFrame
                     POP ax
 
+                    CALL Count_new_lines            ; dx = count of lines
                     CALL Find_Frame_Center          ; bx = offest of printing string in video memmory
                     CALL Skip_space
 
@@ -170,15 +172,16 @@ PrintFrame          proc
 ;           LEN == rectangle`s horizontal size (is measured in characters)
 ;           WID == rectangle`s vertical size (is measured in characters)
 ; Exit:     bx  -- offset in video memmory
-; Exp:      difined correct input constants
+; Exp:      dx  == count of lines
+;           difined correct input constants
 ;           es  -> start video memory [b800h]
-; Destr:    ax | 
-; Save:     cx, dx, si
+; Destr:    ax | bx
+; Save:     cx, si, dx
 ;------------------------------------------------------------------------------------------------------------------
 
 Find_Frame_Center   proc
 
-                    _PUSH_ <cx, dx, si>  ; save regs
+                    _PUSH_ <cx, si, dx>  ; save regs
 
                     mov dx, [Frame0.x0]
                     mov ax, [Frame0.len] ; ax = LEN
@@ -192,9 +195,15 @@ Find_Frame_Center   proc
                     shr ax, 1            ; ax = 0.5 * WID
                     add si, ax           ; si = Ytext                 
 
+                    mov al, bl           ; ax = count of lines
+                    xor ah, ah           ; ax = al
+                    dec ax
+                    shr ax, 1           
+                    add si, ax           ; take a correction for count of lines
+                    
                     CALL CalcAdrXY       ; bx = offset
 
-                    _POP_ <si, dx, cx>   ; recover regs
+                    _POP_ <dx, si, cx>   ; recover regs
                     ret
                     endp
 
@@ -248,7 +257,7 @@ PrintString 		proc
                     add bx, 160         ; new line offset
                     mov di, bx
                     jmp @@Print_one_char
-                    
+
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -582,18 +591,20 @@ Get_one_opt     proc
 ; Descr:    count of lines divided by new line symbol (%) in the printing string
 ; Entry:    si -> the string`s start        
 ;           cx -- char counter
-; Exit:     dx -- count of lines
-; Exp:      --
-; Destr:    | dx
+; Exit:     dl -- count of lines
+; Exp:      bx == count of lines
+;           fill LineLen_arr
+; Destr:    | bx
 ; Save:     es, di, si, cx
 ;------------------------------------------------------------------------------------------------------------------
 
 Count_new_lines     proc
 
                     CALL Skip_space
-                    _PUSH_ <cx, di, es> ; save regs
+                    _PUSH_ <cx, dx, di, es> ; save regs
 
-                    xor dx, dx      ; refresh new line counter
+                    xor dl, dl      ; refresh lenght ciunter
+                    xor bx, bx      ; refresh new line counter
 
                     mov di, ds
                     mov es, di      ; es -> data seg
@@ -602,15 +613,18 @@ Count_new_lines     proc
 
 	@@check_one_char:
                     scasb
+                    inc dl                      ; len += 1
                     je @@inc_newline_counter    ; if char == '%'
 					loop @@check_one_char
 
     @@end_of_func:
-                    _POP_ <es, di, cx>  ; recover regs
+                    _POP_ <es, di, dx, cx>      ; recover regs
                     ret    
 
     @@inc_newline_counter:
-                    inc dx
+                    mov byte ptr [LineLen_arr + bx], dl     ; store line length
+                    xor dl, dl                              ; refresh length counter
+                    inc bx
                     jmp @@check_one_char
                     
                     endp
