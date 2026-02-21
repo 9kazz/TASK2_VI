@@ -1,3 +1,4 @@
+.286
 .model tiny
 .code
 org 100h
@@ -60,13 +61,6 @@ Style_t             struc
     feature         dw 0000h
                     ends
 
-; Style_t             struc
-;     frame           dw 8423h
-;     fill            dw 0420h
-;     text            dw 0C21h
-;     feature         dw 0000h
-;                     ends
-
 HOR_STEP            = 1
 VERT_STEP           = 80  
 
@@ -92,7 +86,7 @@ Start               proc
 MAIN                proc
 
                     ESVIDMEM
-dd 90909090h
+
                     xor ch, ch
                     mov cl, ds:[80h]    ; lenth of the command line
                     mov si, 81h         ; start of command line
@@ -111,7 +105,7 @@ dd 90909090h
 
                     CALL Find_Frame_Center          ; bx = offest of printing string in video memmory
                     CALL Skip_space
-                    dd 90909090h
+
                     PUSH si                         ; si -> start of the printing string | Cdecl
                     mov ax, [Style_code.text]       
                     PUSH ax                         ; ax = char & attribute | Cdecl
@@ -217,7 +211,7 @@ Find_Frame_Center   proc
 ;               2 arg: style
 ;               3 arg: cur command line adr
 ; Destr:    ax | si, cx
-; Save:     di
+; Save:     di, bx
 ;------------------------------------------------------------------------------------------------------------------
 
 PrintString 		proc
@@ -227,7 +221,7 @@ PrintString 		proc
                     push bp
                     mov bp, sp          ; save bp
 
-                    PUSH di             ; save reg
+                    _PUSH_ <di, bx>     ; save regs
 
                     test cx, cx         ; if no string to print
                     jz @@end_of_func
@@ -236,15 +230,25 @@ PrintString 		proc
                     mov ax, [bp + 6]    ; store attribite (char will be changed by lodsb)
                     mov di, [bp + 4]    ; start adr to print string in vid mem
 
+                    mov bx, di          ; bx -> cur string starts
+
 	@@Print_one_char:
                     lodsb               ; save 1 char in al
+                    cmp al, '%'
+                    je @@new_line
                     stosw               ; print 1 char and it`s attribite
 					loop @@Print_one_char
 
     @@end_of_func:
-                    POP di              ; recover reg
+                    _POP_ <bx, di>      ; recover regs
                     pop bp
                     ret    
+
+    @@new_line:     
+                    add bx, 160         ; new line offset
+                    mov di, bx
+                    jmp @@Print_one_char
+                    
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -574,6 +578,44 @@ Get_one_opt     proc
 
                     endp
 
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    count of lines divided by new line symbol (%) in the printing string
+; Entry:    si -> the string`s start        
+;           cx -- char counter
+; Exit:     dx -- count of lines
+; Exp:      --
+; Destr:    | dx
+; Save:     es, di, si, cx
+;------------------------------------------------------------------------------------------------------------------
+
+Count_new_lines     proc
+
+                    CALL Skip_space
+                    _PUSH_ <cx, di, es> ; save regs
+
+                    xor dx, dx      ; refresh new line counter
+
+                    mov di, ds
+                    mov es, di      ; es -> data seg
+                    mov di, si      ; di = si -> cur char in com line
+                    mov al, '%'     ; al = divide symbol
+
+	@@check_one_char:
+                    scasb
+                    je @@inc_newline_counter    ; if char == '%'
+					loop @@check_one_char
+
+    @@end_of_func:
+                    _POP_ <es, di, cx>  ; recover regs
+                    ret    
+
+    @@inc_newline_counter:
+                    inc dx
+                    jmp @@check_one_char
+                    
+                    endp
+
+                
 ;===============================================================================================================================================================================================
 
 end                 Start
