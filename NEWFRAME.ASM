@@ -179,7 +179,7 @@ Get_1_LineOffset_Y  proc
 
                     mov dx, [Frame0.y0]
                     shl dx, 1            ; dx = 2*Y0
-dd 90909090h
+
                     mov ax, [Frame0.wid] ; ax = WID
                     or ax, 1             ; make ax odd
                     
@@ -215,7 +215,7 @@ Get_TextOffset_X    proc
 
                     mov di, [Frame0.x0]
                     shl di, 1            ; di = 2*X0
-dd 90909090h
+
                     mov ax, [Frame0.len] ; ax = LEN
                     or ax, 1             ; make ax odd
 
@@ -255,7 +255,7 @@ Get_Full_TextOffset proc
                     shl bx, 5           ; bx = 160y
 
                     add bx, dx          ; bx = vert offset of cur line
-dd 90909090h
+
                     add di, bx          ; di = full offset 
 
                     _POP_ <bx, ax>
