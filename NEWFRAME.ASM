@@ -240,28 +240,30 @@ Get_TextOffset_X    proc
 ; Exp:      defined correct input constants
 ;           es  -> start video memory [b800h]
 ; Destr:    | di
-; Save:     ax, bx
+; Save:     ax, bx, dx
 ;------------------------------------------------------------------------------------------------------------------
 
-Get_Full_TextOffset proc
+Get_Full_TextOffset proc                     
+dd 90909090h
+dd 90909090h        
+                    push bp
+                    mov bp, sp
 
                     CALL Get_TextOffset_X    ; di = hor offest of cur line
-
-                    _PUSH_ <ax, bx>
                     
-                    mov ax, bx          ; ax = y = bx
-                    shl bx, 2           ; bx = 4y
-                    add bx, ax          ; bx = 5y
-                    shl bx, 5           ; bx = 160y
+                    mov ax, word ptr [bp + 4]    ; ax = y
+                    mov dx, ax               ; dx = y
+                    shl dx, 2                ; dx = 4y
+                    add dx, ax               ; dx = 5y
+                    shl dx, 5                ; dx = 160y
 
-                    add bx, dx          ; bx = vert offset of cur line
+                    mov ax, word ptr [bp + 6]
+                    add dx, ax               ; dx = vert offset of cur line
 
-                    add di, bx          ; di = full offset 
+                    add di, dx               ; di = full offset 
 
-                    _POP_ <bx, ax>
-                    inc bx              ; next line
-
-                    ret
+                    pop bp
+                    ret 4
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -280,7 +282,7 @@ Get_Full_TextOffset proc
 ; Save:     di, dx
 ;------------------------------------------------------------------------------------------------------------------
 
-PrintString 		proc
+PrintString 		proc                ; C DECL CALL
 
                     CALL Skip_space
 
@@ -298,23 +300,32 @@ PrintString 		proc
 
                     CALL Get_1_LineOffset_Y  ; dx = Y offset of 1st line
                     xor bx, bx               ; bx = 0 (new line counter)
+
+                    _PUSH_ <ax, bx, dx>      ; save regs before Pascal call
+                    _PUSH_ <dx, bx>          ; push args
                     CALL Get_Full_TextOffset ; di = full offset of cur line
+                    _POP_ <dx, bx, ax>       ; recover regs after Pascal call
+                    inc bx                   ; next line
 
 	@@Print_one_char:
-                    lodsb               ; save 1 char in al
+                    lodsb                    ; save 1 char in al
                     cmp al, '%'
                     je @@new_line
-                    stosw               ; print 1 char and it`s attribite
+                    stosw                    ; print 1 char and it`s attribite
 					loop @@Print_one_char
 
     @@end_of_func:
-                    _POP_ <di, dx>      ; recover regs
+                    _POP_ <di, dx>           ; recover regs
                     pop bp
                     ret    
 
     @@new_line:
                     dec cx
+                    _PUSH_ <ax, bx, dx>      ; save regs before Pascal call
+                    _PUSH_ <dx, bx>          ; push args
                     CALL Get_Full_TextOffset ; di = full offset of cur line
+                    _POP_ <dx, bx, ax>       ; recover regs after Pascal call
+                    inc bx                   ; next line
                     jmp @@Print_one_char
 
                     endp
@@ -638,7 +649,6 @@ Get_one_opt     proc
 
     @@style:        CALL Atoi
                     CALL Get_Style   ; ds:[Style_code] : filled struct of style                                                                                      
-    ; @@style go though to @@default, then execute jmp @@end_of_func
 
     @@default:      xor ax, ax       ; clear ax-flag (incorrect flag)
                     jmp @@end_of_func
