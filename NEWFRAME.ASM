@@ -104,14 +104,12 @@ MAIN                proc
                     CALL PrintFrame
                     POP ax
 
-                    CALL Count_new_lines            ; dx = count of lines
-                    CALL Find_Frame_Center          ; bx = offest of printing string in video memmory
-                    CALL Skip_space
+                    CALL Count_new_lines            ; bx = count of lines
 
                     PUSH si                         ; si -> start of the printing string | Cdecl
                     mov ax, [Style_code.text]       
                     PUSH ax                         ; ax = char & attribute | Cdecl
-                    PUSH bx                         ; bx = start offset in vid mem | Cdecl
+                    PUSH bx                         ; bx = count of lines | Cdecl
                     CALL PrintString                
                     _POP_ <bx, ax, si>              ; clear the stack
 
@@ -164,49 +162,115 @@ PrintFrame          proc
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
-; Descr:    calculates offset from the start of video memory according coordinates of frame`s center
-; Entry:    cx -- len of the text
-;           frame coordinates and size as defined constants X0, Y0, LEN, WID
-;           X0  == horizontal screen offset of rectangle`s upper-left vertex
+; Descr:    calculates text`s vertical offset from the start of video memory
+; Entry:    bx == count of lines
+;           frame coordinates and size as defined constants Y0, WID
 ;           Y0  == vertical screen offset of rectangle`s upper-left vertex
-;           LEN == rectangle`s horizontal size (is measured in characters)
 ;           WID == rectangle`s vertical size (is measured in characters)
-; Exit:     bx  -- offset in video memmory
-; Exp:      dx  == count of lines
-;           difined correct input constants
+; Exit:     dx  -- vertical offset in video memmory
+; Exp:      defined correct input constants
 ;           es  -> start video memory [b800h]
-; Destr:    ax | bx
-; Save:     cx, si, dx
+; Destr:    | dx
+; Save:     ax, bx
 ;------------------------------------------------------------------------------------------------------------------
 
-Find_Frame_Center   proc
+Get_1_LineOffset_Y  proc
+                    PUSH ax
 
-                    _PUSH_ <cx, si, dx>  ; save regs
-
-                    mov dx, [Frame0.x0]
-                    mov ax, [Frame0.len] ; ax = LEN
-                    shr ax, 1            ; ax = 0.5 * LEN
-                    shr cx, 1            ; cl = 0.5 * com line lenth
-                    add dx, ax      
-                    sub dx, cx           
-
-                    mov si, [Frame0.y0]
+                    mov dx, [Frame0.y0]
+                    shl dx, 1            ; dx = 2*Y0
+dd 90909090h
                     mov ax, [Frame0.wid] ; ax = WID
-                    shr ax, 1            ; ax = 0.5 * WID
-                    add si, ax           ; si = Ytext                 
-
-                    mov al, bl           ; ax = count of lines
-                    xor ah, ah           ; ax = al
-                    dec ax
-                    shr ax, 1           
-                    add si, ax           ; take a correction for count of lines
+                    test ax, 1h
+                    jz @@make_odd
                     
-                    CALL CalcAdrXY       ; bx = offset
+    @@continue:     sub ax, bx              
+                    add dx, ax            
 
-                    _POP_ <dx, si, cx>   ; recover regs
+         			mov ax, dx	    ; ax = y
+                    shl dx, 2	    ; dx = 4y
+                    add dx, ax	    ; dx = 5y
+                    shl dx, 4	    ; dx = 80y = Yoffset   
+
+                    POP ax
                     ret
+
+    @@make_odd:     dec ax
+                    jmp @@continue
+                    
                     endp
 
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    calculates text`s horizontal offset from the start of video memory
+; Entry:    bx == number of the current line
+;           frame coordinates and size as defined constants Y0, WID
+;           X0  == horizontal screen offset of rectangle`s upper-left vertex
+;           LEN == rectangle`s horizontal size (is measured in characters)
+; Exit:     di  -- horizontal offset in video memmory
+; Exp:      defined correct input constants
+;           es  -> start video memory [b800h]
+; Destr:    | di
+; Save:     ax, cx
+;------------------------------------------------------------------------------------------------------------------
+
+Get_TextOffset_X    proc
+                    _PUSH_ <ax, cx>
+
+                    mov di, [Frame0.x0]
+                    shl di, 1            ; di = 2*X0
+dd 90909090h
+                    mov ax, [Frame0.len] ; ax = LEN
+                    test ax, 1h
+                    jz @@make_odd
+
+    @@continue:     xor ch, ch
+                    mov cl, byte ptr [LineLen_arr + bx] ; cl = len of cur line
+
+                    sub ax, cx  
+                    add di, ax  
+
+                    _POP_ <cx, ax>
+                    ret
+
+    @@make_odd:     dec ax
+                    jmp @@continue
+                    
+                    endp
+
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    calculates full text`s offset from the start of video memory
+; Entry:    dx == vertical offset of the 1st line
+;           bx == number of the current line
+;           frame coordinates and size as defined constants Y0, WID
+;           X0  == horizontal screen offset of rectangle`s upper-left vertex
+;           LEN == rectangle`s horizontal size (is measured in characters)
+; Exit:     di  -- full offset in video memmory
+; Exp:      defined correct input constants
+;           es  -> start video memory [b800h]
+; Destr:    | di
+; Save:     ax, bx
+;------------------------------------------------------------------------------------------------------------------
+
+Get_Full_TextOffset proc
+
+                    CALL Get_TextOffset_X    ; di = hor offest of cur line
+
+                    _PUSH_ <ax, bx>
+                    
+                    mov ax, bx          ; ax = y = bx
+                    shl bx, 2           ; bx = 4y
+                    add bx, ax          ; bx = 5y
+                    shl bx, 5           ; bx = 160y
+
+                    add bx, dx          ; bx = vert offset of cur line
+dd 90909090h
+                    add di, bx          ; di = full offset 
+
+                    _POP_ <bx, ax>
+                    inc bx              ; next line
+
+                    ret
+                    endp
 ;------------------------------------------------------------------------------------------------------------------
 ; Descr:    prints command line using video memory.
 ; Entry:    cx  == count of symbols in string
@@ -216,11 +280,11 @@ Find_Frame_Center   proc
 ;           cx  == the rest length of the command line
 ; Exp:   1) es  -> start video memory [b800h]
 ;        2) demands some data in  the stack (Cdecl):
-;               1 arg: starting adr in vid mem
+;               1 arg: count of lines
 ;               2 arg: style
 ;               3 arg: cur command line adr
-; Destr:    ax | si, cx
-; Save:     di, bx
+; Destr:    ax, bx | si, cx
+; Save:     di, dx
 ;------------------------------------------------------------------------------------------------------------------
 
 PrintString 		proc
@@ -230,16 +294,18 @@ PrintString 		proc
                     push bp
                     mov bp, sp          ; save bp
 
-                    _PUSH_ <di, bx>     ; save regs
+                    _PUSH_ <dx, di>     ; save regs
 
                     test cx, cx         ; if no string to print
                     jz @@end_of_func
 
-                    mov si, [bp + 8]    ; start adr of com line
-                    mov ax, [bp + 6]    ; store attribite (char will be changed by lodsb)
-                    mov di, [bp + 4]    ; start adr to print string in vid mem
+                    mov si, [bp + 8]    ; si -> start of com line
+                    mov ax, [bp + 6]    ; ax =  store attribite (char will be changed by lodsb)
+                    mov bx, [bp + 4]    ; bx =  count of lines
 
-                    mov bx, di          ; bx -> cur string starts
+                    CALL Get_1_LineOffset_Y  ; dx = Y offset of 1st line
+                    xor bx, bx               ; bx = 0 (new line counter)
+                    CALL Get_Full_TextOffset ; di = full offset of cur line
 
 	@@Print_one_char:
                     lodsb               ; save 1 char in al
@@ -249,13 +315,13 @@ PrintString 		proc
 					loop @@Print_one_char
 
     @@end_of_func:
-                    _POP_ <bx, di>      ; recover regs
+                    _POP_ <di, dx>      ; recover regs
                     pop bp
                     ret    
 
-    @@new_line:     
-                    add bx, 160         ; new line offset
-                    mov di, bx
+    @@new_line:
+                    dec cx
+                    CALL Get_Full_TextOffset ; di = full offset of cur line
                     jmp @@Print_one_char
 
                     endp
@@ -372,13 +438,13 @@ CalcAdrXY           proc
                     _PUSH_ <si, dx>
 
                     shl dx, 1       ; dx = 2x bytes
-         			mov bx, si	    ; ax = y
+         			mov bx, si	    ; bx = y
                     shl si, 2	    ; si = 4y
                     add si, bx	    ; si = 5y
                     shl si, 5	    ; si = 160y bytes
                     
-                    mov bx, dx
-                    add bx, si
+                    mov bx, si
+                    add bx, dx
 
                     _POP_ <dx, si>
                     ret
@@ -591,11 +657,11 @@ Get_one_opt     proc
 ; Descr:    count of lines divided by new line symbol (%) in the printing string
 ; Entry:    si -> the string`s start        
 ;           cx -- char counter
-; Exit:     dl -- count of lines
-; Exp:      bx == count of lines
+; Exit:     bx == count of lines
 ;           fill LineLen_arr
+; Exp:      --
 ; Destr:    | bx
-; Save:     es, di, si, cx
+; Save:     es, di, dx, cx
 ;------------------------------------------------------------------------------------------------------------------
 
 Count_new_lines     proc
@@ -603,7 +669,7 @@ Count_new_lines     proc
                     CALL Skip_space
                     _PUSH_ <cx, dx, di, es> ; save regs
 
-                    xor dl, dl      ; refresh lenght ciunter
+                    xor dl, dl      ; refresh lenght counter
                     xor bx, bx      ; refresh new line counter
 
                     mov di, ds
@@ -613,9 +679,12 @@ Count_new_lines     proc
 
 	@@check_one_char:
                     scasb
-                    inc dl                      ; len += 1
                     je @@inc_newline_counter    ; if char == '%'
+                    inc dl                      ; len += 1
 					loop @@check_one_char
+
+                    mov byte ptr [LineLen_arr + bx], dl     ; store line length
+                    inc bx
 
     @@end_of_func:
                     _POP_ <es, di, dx, cx>      ; recover regs
@@ -625,11 +694,11 @@ Count_new_lines     proc
                     mov byte ptr [LineLen_arr + bx], dl     ; store line length
                     xor dl, dl                              ; refresh length counter
                     inc bx
+                    dec cx
                     jmp @@check_one_char
-                    
+
                     endp
 
-                
 ;===============================================================================================================================================================================================
 
 end                 Start
