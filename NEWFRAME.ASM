@@ -244,24 +244,24 @@ Get_TextOffset_X    proc
 ;------------------------------------------------------------------------------------------------------------------
 
 Get_Full_TextOffset proc                     
-dd 90909090h
-dd 90909090h        
+
                     push bp
                     mov bp, sp
 
-                    CALL Get_TextOffset_X    ; di = hor offest of cur line
+                    CALL Get_TextOffset_X       ; di = hor offest of cur line
                     
-                    mov ax, word ptr [bp + 4]    ; ax = y
-                    mov dx, ax               ; dx = y
-                    shl dx, 2                ; dx = 4y
-                    add dx, ax               ; dx = 5y
-                    shl dx, 5                ; dx = 160y
+                    mov ax, word ptr [bp + 4]   ; ax = y
+                    mov dx, ax                  ; dx = y
+                    shl dx, 2                   ; dx = 4y
+                    add dx, ax                  ; dx = 5y
+                    shl dx, 5                   ; dx = 160y
 
                     mov ax, word ptr [bp + 6]
-                    add dx, ax               ; dx = vert offset of cur line
+                    add dx, ax                  ; dx = vert offset of cur line
 
-                    add di, dx               ; di = full offset 
-
+                    add di, dx                  ; di = full offset 
+                    and di, 0FFFEh
+                    
                     pop bp
                     ret 4
                     endp
