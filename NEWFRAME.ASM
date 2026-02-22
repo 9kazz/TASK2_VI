@@ -170,8 +170,8 @@ PrintFrame          proc
 ; Exit:     dx  -- vertical offset in video memmory
 ; Exp:      defined correct input constants
 ;           es  -> start video memory [b800h]
-; Destr:    | dx
-; Save:     ax, bx
+; Destr:    bx | dx
+; Save:     ax
 ;------------------------------------------------------------------------------------------------------------------
 
 Get_1_LineOffset_Y  proc
@@ -181,10 +181,10 @@ Get_1_LineOffset_Y  proc
                     shl dx, 1            ; dx = 2*Y0
 dd 90909090h
                     mov ax, [Frame0.wid] ; ax = WID
-                    test ax, 1h
-                    jz @@make_odd
+                    or ax, 1             ; make ax odd
                     
-    @@continue:     sub ax, bx              
+                    or bx, 1             ; make bx odd
+                    sub ax, bx              
                     add dx, ax            
 
          			mov ax, dx	    ; ax = y
@@ -195,9 +195,6 @@ dd 90909090h
                     POP ax
                     ret
 
-    @@make_odd:     dec ax
-                    jmp @@continue
-                    
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -220,10 +217,9 @@ Get_TextOffset_X    proc
                     shl di, 1            ; di = 2*X0
 dd 90909090h
                     mov ax, [Frame0.len] ; ax = LEN
-                    test ax, 1h
-                    jz @@make_odd
+                    or ax, 1             ; make ax odd
 
-    @@continue:     xor ch, ch
+                    xor ch, ch
                     mov cl, byte ptr [LineLen_arr + bx] ; cl = len of cur line
 
                     sub ax, cx  
@@ -231,10 +227,6 @@ dd 90909090h
 
                     _POP_ <cx, ax>
                     ret
-
-    @@make_odd:     dec ax
-                    jmp @@continue
-                    
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -271,6 +263,7 @@ dd 90909090h
 
                     ret
                     endp
+
 ;------------------------------------------------------------------------------------------------------------------
 ; Descr:    prints command line using video memory.
 ; Entry:    cx  == count of symbols in string
