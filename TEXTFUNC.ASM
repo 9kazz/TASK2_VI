@@ -24,11 +24,13 @@ PrintString 		proc                ; C DECL CALL
                     _PUSH_ <dx, di>     ; save regs
 
                     test cx, cx         ; if no string to print
-                    jz @@end_of_func
+                    jz PrintString_EOF
 
                     mov si, [bp + 8]    ; si -> start of com line
-                    mov ax, [bp + 6]    ; ax =  store attribite (char will be changed by lodsb)
-                    mov bx, [bp + 4]    ; bx =  count of lines
+                    CALL Check_frkt     ; check if com line equal the password "FRKT" and print ASKII-art
+                    mov ax, [bp + 6]    ; ax == store attribite (char will be changed by lodsb)
+                    mov bx, [bp + 4]    ; bx == count of lines
+
 
                     CALL Get_1_LineOffset_Y  ; dx = Y offset of 1st line
                     xor bx, bx               ; bx = 0 (new line counter)
@@ -46,7 +48,7 @@ PrintString 		proc                ; C DECL CALL
                     stosw                    ; print 1 char and it`s attribite
 					loop @@Print_one_char
 
-    @@end_of_func:
+    PrintString_EOF:
                     _POP_ <di, dx>           ; recover regs
                     pop bp
                     ret    

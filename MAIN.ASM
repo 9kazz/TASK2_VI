@@ -69,6 +69,8 @@ VERT_STEP           = 80
 Start               proc              
                     jmp    @@Skip_Inits
 
+                    include ASKIIART.ASM   ; askii-art array
+                    
                     Frame0 FramePar_t <10, 10, 15, 5, 0>
 
                     Style_arr   Style_t <02DBh, 0220h, 0A3Eh, 0000h>
@@ -122,6 +124,7 @@ include FRAMEFUN.ASM    ; frame functions
 include TEXTFUNC.ASM    ; text functions
 include COMLINEO.ASM    ; command line options
 include UTILS.ASM       ; utils
+include PRINTART.ASM    ; func to printing the ASKII_arts
 
 ;===============================================================================================================================================================================================
 
