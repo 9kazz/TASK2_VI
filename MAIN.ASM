@@ -73,9 +73,7 @@ Start               proc
                     
                     Frame0 FramePar_t <10, 10, 15, 5, 0>
 
-                    Style_arr   Style_t <02DBh, 0220h, 0A3Eh, 0000h>
-                                Style_t <4c03h or 8000h, 4c00h, 0FFFFh, 0000h>
-                                Style_t <8423h, 0420h, 0C21h, 0000h>
+                    include STYLES.ASM     ; style arr
                         
                     Style_code  Style_t <,,,>
 
@@ -98,12 +96,12 @@ MAIN                proc
 
                     mov ax, [Style_code.fill]       ; ax = char & attribute  
                     PUSH ax                         ; FillFrame demands style atr in the stack
-                    CALL FillFrame
+                    CALL FillFrameDbl
                     POP ax
 
                     mov ax, [Style_code.frame]      ; ax = char & attribute   
                     PUSH ax                         ; PrintFrame demands style atr in the stack
-                    CALL PrintFrame
+                    CALL PrintFrameDbl
                     POP ax
 
                     CALL Count_new_lines            ; bx = count of lines

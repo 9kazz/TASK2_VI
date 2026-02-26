@@ -43,7 +43,6 @@ PrintFrame          proc
                     ret
                     endp
 
-
 ;------------------------------------------------------------------------------------------------------------------
 ; Descr:    prints group of characters with fixed offset into video memory.
 ; Entry:    dx  == horizontal screen offset of the line`s start
@@ -117,6 +116,140 @@ PrintLine           proc
 ;------------------------------------------------------------------------------------------------------------------
 
 FillFrame           proc
+
+                    push bp                  ; save bp
+                    mov bp, sp
+
+                    _PUSH_ <bx, dx, cx, si, di>     ; save regs
+
+                    mov bp, [bp + 4]         ; !!! BP = style (char & attribute) !!!
+
+                    mov bx, [Frame0.y0]      ; bx = y0
+                    mov si, [Frame0.wid]     ; si = wid
+                    lea ax, [bx + si]        ; ax = y0 + wid
+                    dec ax                   ; ax = y0 + wid - 1             
+                                            
+    @@Fill_one_line:                        
+                    CALL_PRINT_LINE [Frame0.x0], ax, [Frame0.len], HOR_STEP, bp  ; this func changes cx
+                    dec ax                                               ;   ~~
+                    cmp ax, [Frame0.y0]                                  ;   ^
+                    jge  @@Fill_one_line                                 ;   |
+
+                    _POP_ <di, si, cx, dx, bx>  ; recover regs
+                    pop bp
+                    ret
+                    endp
+
+
+
+
+
+PrintFrameDbl       proc
+
+                    push bp
+                    mov bp, sp          ; save bp
+
+                    _PUSH_ <bx, cx, dx, si, di>  ; save regs
+
+                    mov ax, [Frame0.wid]
+                    sub ax, 4
+                    mov [Frame0.wid], ax
+                    mov ax, [Frame0.len]
+                    sub ax, 4
+                    mov [Frame0.len], ax
+                    mov ax, [Frame0.x0]
+                    add ax, 2
+                    mov [Frame0.x0], ax
+                    mov ax, [Frame0.y0]
+                    add ax, 2
+                    mov [Frame0.y0], ax
+
+                    mov ax, 70cdh    ; ax = style (char & attribute)
+                    CALL_PRINT_LINE [Frame0.x0], [Frame0.y0], [Frame0.len], HOR_STEP, ax      ; upper hor side
+
+                    mov ax, 70bah    ; ax = style (char & attribute)
+                    CALL_PRINT_LINE [Frame0.x0], [Frame0.y0], [Frame0.wid], VERT_STEP, ax     ; left vert side
+                    
+                    mov bx, [Frame0.y0]        
+                    dec bx                                                                    ; sub 1 to fit real size of frame
+                    mov si, [Frame0.wid]
+                    lea si, [bx + si]                                                         ; si = Y0 + WID - 1
+                    mov ax, 70cdh    ; ax = style (char & attribute)
+                    CALL_PRINT_LINE [Frame0.x0], si, [Frame0.len], HOR_STEP, ax               ; lower hor side
+                    
+                    mov bx, [Frame0.x0]   
+                    dec bx                                                                    ; sub 1 to fit real size of frame
+                    mov si, [Frame0.len]
+                    lea dx, [bx + si]                                                         ; dx = X0 + LEN - 1
+                    mov ax, 70bah    ; ax = style (char & attribute)
+                    CALL_PRINT_LINE dx, [Frame0.y0], [Frame0.wid], VERT_STEP, ax              ; right vert side
+     
+                    mov si, [Frame0.y0]
+         			mov bx, si	    ; bx = y
+                    shl si, 2	    ; si = 4y
+                    add si, bx	    ; si = 5y
+                    shl si, 5	    ; si = 160y bytes
+                    mov bx, [Frame0.x0]
+                    mov ax, 70c9h    ; ax = style (char & attribute)
+                    mov es:[bx + si + 10], ax
+
+                    mov si, [Frame0.y0]
+                    add si, [Frame0.wid]
+                    dec si
+         			mov bx, si	    ; bx = y
+                    shl si, 2	    ; si = 4y
+                    add si, bx	    ; si = 5y
+                    shl si, 5	    ; si = 160y bytes
+                    mov bx, [Frame0.x0]
+                    mov ax, 70c8h    ; ax = style (char & attribute)
+                    mov es:[bx + si + 10], ax
+
+                    mov si, [Frame0.y0]
+         			mov bx, si	    ; bx = y
+                    shl si, 2	    ; si = 4y
+                    add si, bx	    ; si = 5y
+                    shl si, 5	    ; si = 160y bytes
+                    mov bx, [Frame0.x0]
+                    add bx, [Frame0.len]
+                    add bx, [Frame0.len]
+                    sub bx, 2
+                    mov ax, 70bbh    ; ax = style (char & attribute)
+                    mov es:[bx + si + 10], ax
+
+                    mov si, [Frame0.y0]
+                    add si, [Frame0.wid]
+                    dec si
+         			mov bx, si	    ; bx = y
+                    shl si, 2	    ; si = 4y
+                    add si, bx	    ; si = 5y
+                    shl si, 5	    ; si = 160y bytes
+                    mov bx, [Frame0.x0]
+                    add bx, [Frame0.len]
+                    add bx, [Frame0.len]
+                    sub bx, 2
+                    mov ax, 70bdh    ; ax = style (char & attribute)
+                    mov es:[bx + si + 10], ax
+
+                    _POP_ <di, si, dx, cx, bx>  ; recover regs
+                    pop bp
+                    ret
+                    endp
+
+
+FillFrameDbl        proc
+
+                    mov ax, [Frame0.wid]
+                    add ax, 4
+                    mov [Frame0.wid], ax
+                    mov ax, [Frame0.len]
+                    add ax, 4
+                    mov [Frame0.len], ax
+                    mov ax, [Frame0.x0]
+                    sub ax, 2
+                    mov [Frame0.x0], ax
+                    mov ax, [Frame0.y0]
+                    sub ax, 2
+                    mov [Frame0.y0], ax
 
                     push bp                  ; save bp
                     mov bp, sp

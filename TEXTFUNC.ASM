@@ -35,10 +35,8 @@ PrintString 		proc                ; C DECL CALL
                     CALL Get_1_LineOffset_Y  ; dx = Y offset of 1st line
                     xor bx, bx               ; bx = 0 (new line counter)
 
-                    _PUSH_ <ax, bx, dx>      ; save regs before Pascal call
                     _PUSH_ <dx, bx>          ; push args
                     CALL Get_Full_TextOffset ; di = full offset of cur line
-                    _POP_ <dx, bx, ax>       ; recover regs after Pascal call
                     inc bx                   ; next line
 
 	@@Print_one_char:
@@ -55,13 +53,50 @@ PrintString 		proc                ; C DECL CALL
 
     @@new_line:
                     dec cx
-                    _PUSH_ <ax, bx, dx>      ; save regs before Pascal call
                     _PUSH_ <dx, bx>          ; push args
                     CALL Get_Full_TextOffset ; di = full offset of cur line
-                    _POP_ <dx, bx, ax>       ; recover regs after Pascal call
                     inc bx                   ; next line
                     jmp @@Print_one_char
 
+                    endp
+
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    calculates full text`s offset from the start of video memory
+; Entry:    dx == vertical offset of the 1st line
+;           bx == number of the current line
+;           frame coordinates and size as defined constants Y0, WID
+;           X0  == horizontal screen offset of rectangle`s upper-left vertex
+;           LEN == rectangle`s horizontal size (is measured in characters)
+; Exit:     di  -- full offset in video memmory
+; Exp:      defined correct input constants
+;           es  -> start video memory [b800h]
+; Destr:    | di
+; Save:     ax, bx, dx
+;------------------------------------------------------------------------------------------------------------------
+
+Get_Full_TextOffset proc                     
+
+                    push bp
+                    mov bp, sp
+                    _PUSH_ <ax, bx, dx>         ; save regs before Pascal-call func
+
+                    CALL Get_TextOffset_X       ; di = hor offest of cur line
+                    
+                    mov ax, word ptr [bp + 4]   ; ax = y
+                    mov dx, ax                  ; dx = y
+                    shl dx, 2                   ; dx = 4y
+                    add dx, ax                  ; dx = 5y
+                    shl dx, 5                   ; dx = 160y
+
+                    mov ax, word ptr [bp + 6]
+                    add dx, ax                  ; dx = vert offset of cur line
+
+                    add di, dx                  ; di = full offset 
+                    and di, 0FFFEh
+                    
+                    _POP_ <dx, bx, ax>          ; recover regs after Pascal-call func
+                    pop bp
+                    ret 4
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
@@ -130,43 +165,6 @@ Get_TextOffset_X    proc
 
                     _POP_ <cx, ax>
                     ret
-                    endp
-
-;------------------------------------------------------------------------------------------------------------------
-; Descr:    calculates full text`s offset from the start of video memory
-; Entry:    dx == vertical offset of the 1st line
-;           bx == number of the current line
-;           frame coordinates and size as defined constants Y0, WID
-;           X0  == horizontal screen offset of rectangle`s upper-left vertex
-;           LEN == rectangle`s horizontal size (is measured in characters)
-; Exit:     di  -- full offset in video memmory
-; Exp:      defined correct input constants
-;           es  -> start video memory [b800h]
-; Destr:    | di
-; Save:     ax, bx, dx
-;------------------------------------------------------------------------------------------------------------------
-
-Get_Full_TextOffset proc                     
-
-                    push bp
-                    mov bp, sp
-
-                    CALL Get_TextOffset_X       ; di = hor offest of cur line
-                    
-                    mov ax, word ptr [bp + 4]   ; ax = y
-                    mov dx, ax                  ; dx = y
-                    shl dx, 2                   ; dx = 4y
-                    add dx, ax                  ; dx = 5y
-                    shl dx, 5                   ; dx = 160y
-
-                    mov ax, word ptr [bp + 6]
-                    add dx, ax                  ; dx = vert offset of cur line
-
-                    add di, dx                  ; di = full offset 
-                    and di, 0FFFEh
-                    
-                    pop bp
-                    ret 4
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------

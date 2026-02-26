@@ -1,3 +1,12 @@
+;------------------------------------------------------------------------------------------------------------------
+; Descr:    print ASKII-art in VM
+; Entry:    --
+; Exit:     --
+; Exp:      es  -> start video memory [b800h]
+; Destr:    ax |
+; Save:     cx, es, di, si
+;------------------------------------------------------------------------------------------------------------------  
+
 PrintArt            proc
                     _PUSH_ <bx, dx, si, cx>
 
@@ -25,7 +34,7 @@ PrintArt            proc
                     endp
 
 ;------------------------------------------------------------------------------------------------------------------
-; Descr:    compares text at the command line with passwor "FRKT" and print ASKII-art if they are same
+; Descr:    compares text at the command line with passwor "FRKT" and calls print ASKII-art func (PrintArt) if they are same
 ; Entry:    cx == count of the rest chars in command line
 ;           si -> cur command line char            
 ; Exit:     --
@@ -45,7 +54,7 @@ Check_frkt          proc
                     mov es, si                  ; es -> data seg
                     mov si, offset Password     ; si -> "FRKT"
 
-                    cmp cx, 4
+                    cmp cx, 4                   ; TODO: strlen
                     jne @@EOF_Failure
 
     @@Cmp_one_char: lodsb                       ; compare com line with password
